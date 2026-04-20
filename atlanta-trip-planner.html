@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atlanta Getaway — Trip Planner</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes float { 0%,100%{transform:translateY(0) rotate(0deg);opacity:0} 10%{opacity:0.5} 90%{opacity:0.3} 100%{transform:translateY(-100vh) rotate(360deg);opacity:0} }
+    .petal{position:fixed;pointer-events:none;z-index:0;animation:float linear infinite;font-size:1rem}
+    body{background:#0c0c1a;color:#e5e7eb}
+    ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+    input[type="checkbox"]{accent-color:#f97316}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+const THEMES = {
+  food:{label:"Food",text:"text-orange-400",bg:"bg-orange-500/10",border:"border-orange-500/30",icon:"🍗"},
+  outdoors:{label:"Outdoors",text:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/30",icon:"🌿"},
+  culture:{label:"Culture",text:"text-amber-400",bg:"bg-amber-500/10",border:"border-amber-500/30",icon:"🏛"},
+  nightlife:{label:"Nightlife",text:"text-violet-400",bg:"bg-violet-500/10",border:"border-violet-500/30",icon:"🎶"},
+  history:{label:"History",text:"text-rose-400",bg:"bg-rose-500/10",border:"border-rose-500/30",icon:"✊"},
+  chill:{label:"Chill",text:"text-sky-400",bg:"bg-sky-500/10",border:"border-sky-500/30",icon:"☕"},
+  conference:{label:"UX360",text:"text-red-400",bg:"bg-red-500/10",border:"border-red-500/30",icon:"🎤"},
+};
+
+const REGIONS=["midtown","downtown","eastside","westside","decatur","buckhead","anywhere"];
+const REGION_LABELS={midtown:"Midtown",downtown:"Downtown",eastside:"East Side",westside:"West Side",decatur:"Decatur",buckhead:"Buckhead",anywhere:"Anywhere"};
+
+const DAYS = [
+  { date:"Tue Apr 21", dow:"Tue", title:"Arrival Evening", region:"city",
+    options:[
+      { id:"d1a",title:"Hotel Check-in & Midtown Stroll",subtitle:"Settle in, quick dinner, nightcap",vibeScore:4,budgetLow:30,budgetHigh:80,themes:["chill","food"],activities:[
+        {time:"20:00",name:"Check in at Canopy by Hilton",desc:"Settle into your room in Midtown. The hotel has a rooftop bar with skyline views.",themes:["chill"]},
+        {time:"20:45",name:"Dinner at South City Kitchen",desc:"5-min walk from hotel. Upscale Southern — fried green tomatoes, buttermilk fried chicken, shrimp & grits.",themes:["food"]},
+        {time:"22:00",name:"Colony Square Evening Walk",desc:"Stroll the open-air development. Grab dessert or a nightcap.",themes:["chill"]},
+      ]},
+      { id:"d1b",title:"Late Night Ponce City Market",subtitle:"Rooftop cocktails, food hall energy",vibeScore:6,budgetLow:40,budgetHigh:120,themes:["food","nightlife"],activities:[
+        {time:"20:00",name:"Check in at Canopy by Hilton",desc:"Drop bags, freshen up.",themes:["chill"]},
+        {time:"20:30",name:"Uber to Ponce City Market",desc:"10-min ride. H&F Burger, Honeysuckle Gelato, rooftop amusement park.",themes:["food","nightlife"]},
+        {time:"22:00",name:"Rooftop at 9 Mile Station",desc:"Craft cocktails. BeltLine views below, city lights above.",themes:["nightlife"]},
+      ]},
+    ]
+  },
+  { date:"Wed Apr 22", dow:"Wed", title:"Conference Day 1", region:"city",
+    options:[
+      { id:"d2a",title:"Full Conference Day",subtitle:"All sessions, evening dinner",vibeScore:6,budgetLow:30,budgetHigh:80,themes:["conference","food"],activities:[
+        {time:"08:30",name:"Walk to SCADshow (10 min)",desc:"Conference venue 10-min walk from Canopy.",themes:["conference"]},
+        {time:"09:00",name:"UX360 — Morning Sessions",desc:"Opening keynote, panels, presentations.",themes:["conference"]},
+        {time:"12:00",name:"Conference Lunch",desc:"Provided at venue. Network with attendees.",themes:["conference","food"]},
+        {time:"13:00",name:"UX360 — Afternoon Sessions",desc:"Sessions run until 17:30.",themes:["conference"]},
+        {time:"17:30",name:"Closing Drinks",desc:"Networking reception.",themes:["conference","nightlife"]},
+        {time:"19:00",name:"Dinner Near Hotel",desc:"Walk back to Midtown.",themes:["food","chill"]},
+      ]},
+      { id:"d2b",title:"Conference + BeltLine Break",subtitle:"Skip afternoon break for a walk",vibeScore:8,budgetLow:50,budgetHigh:130,themes:["conference","outdoors","food"],activities:[
+        {time:"08:30",name:"Walk to SCADshow",desc:"10-min walk from Canopy.",themes:["conference"]},
+        {time:"09:00",name:"UX360 — Morning Sessions",desc:"Keynote and morning panels.",themes:["conference"]},
+        {time:"12:00",name:"Conference Lunch",desc:"Quick lunch, then slip out.",themes:["conference","food"]},
+        {time:"14:50",name:"BeltLine Eastside Trail",desc:"2.4-mile walk. Street art, spring weather.",themes:["outdoors"]},
+        {time:"16:00",name:"Return for Late Sessions",desc:"Meta AI session and feedback loops.",themes:["conference"]},
+        {time:"18:30",name:"Dinner at Ticonderoga Club",desc:"James Beard bar. Cocktails & snacks.",themes:["food","nightlife"]},
+      ]},
+    ]
+  },
+  { date:"Thu Apr 23", dow:"Thu", title:"Conference Day 2", region:"city",
+    options:[
+      { id:"d3a",title:"Full Conference + Hit the Town",subtitle:"All sessions, official after-party",vibeScore:7,budgetLow:30,budgetHigh:100,themes:["conference","nightlife"],activities:[
+        {time:"08:45",name:"Walk to SCADshow",desc:"Day 2. You know the route.",themes:["conference"]},
+        {time:"09:00",name:"UX360 — Morning Sessions",desc:"Research to Revenue, Beyond Handoffs.",themes:["conference"]},
+        {time:"12:30",name:"Conference Lunch",desc:"Refuel and network.",themes:["conference","food"]},
+        {time:"13:30",name:"UX360 — Afternoon Sessions",desc:"Measuring UX, AI talks, AR/VR session.",themes:["conference"]},
+        {time:"16:50",name:"Conference Closes",desc:"Closing remarks.",themes:["conference"]},
+        {time:"17:30",name:"Hit the Town",desc:"Official after-party with local guides.",themes:["nightlife","food"]},
+      ]},
+      { id:"d3b",title:"Conference AM + Explore PM",subtitle:"Morning talks, afternoon city adventure",vibeScore:8,budgetLow:60,budgetHigh:160,themes:["conference","food","culture"],activities:[
+        {time:"08:45",name:"Walk to SCADshow",desc:"Morning sessions only.",themes:["conference"]},
+        {time:"09:00",name:"UX360 — Morning Block",desc:"Keynotes and Beyond Handoffs.",themes:["conference"]},
+        {time:"11:30",name:"Escape to Krog Street Market",desc:"Gu's Dumplings and street art.",themes:["food","culture"]},
+        {time:"14:00",name:"Little Five Points",desc:"Vintage shops, vinyl, ice cream.",themes:["culture","chill"]},
+        {time:"16:00",name:"Fox Bros Bar-B-Q",desc:"Brisket, wings, grits.",themes:["food"]},
+        {time:"18:00",name:"East Atlanta Village",desc:"The EARL, live music, cocktails.",themes:["nightlife"]},
+      ]},
+    ]
+  },
+  { date:"Fri Apr 24", dow:"Fri", title:"Free Day & Departure", region:"nature",
+    options:[
+      { id:"d4a",title:"Nature & Brunch Farewell",subtitle:"River hike, brunch, BeltLine goodbye",vibeScore:5,budgetLow:40,budgetHigh:100,themes:["outdoors","food","chill"],activities:[
+        {time:"08:00",name:"Chattahoochee River Walk",desc:"3-mile loop with bamboo forest.",themes:["outdoors"]},
+        {time:"11:00",name:"Brunch at West Egg Café",desc:"Smoked salmon, French toast.",themes:["food","chill"]},
+        {time:"13:00",name:"Piedmont Park & BeltLine",desc:"Final stroll, spring blooms.",themes:["outdoors","chill"]},
+        {time:"15:00",name:"Back to Hotel — Pack Up",desc:"Check out.",themes:["chill"]},
+        {time:"17:30",name:"Uber to Airport",desc:"30-40 min. Or MARTA: $2.50, 25 min.",themes:[]},
+        {time:"20:35",name:"Flight Departs",desc:"✈️ 8:35pm. Arrive by 6:30pm.",themes:[]},
+      ]},
+      { id:"d4b",title:"Go Out With a Bang",subtitle:"Stone Mountain, BBQ, rooftop sunset",vibeScore:8,budgetLow:80,budgetHigh:180,themes:["outdoors","food","nightlife"],activities:[
+        {time:"07:30",name:"Stone Mountain Summit Hike",desc:"1-mile hike, 360° views.",themes:["outdoors"]},
+        {time:"10:30",name:"Community Q BBQ",desc:"Decatur's best. Perfect send-off.",themes:["food"]},
+        {time:"13:00",name:"Atlanta Botanical Garden",desc:"Spring blooms, Canopy Walk.",themes:["outdoors","culture"]},
+        {time:"15:30",name:"Back to Hotel — Pack Up",desc:"Check out.",themes:["chill"]},
+        {time:"16:30",name:"Rooftop Sunset at 9 Mile Station",desc:"Craft cocktails, skyline views.",themes:["nightlife","chill"]},
+        {time:"18:00",name:"Head to Airport",desc:"Uber or MARTA.",themes:[]},
+      ]},
+    ]
+  },
+];
+
+const INITIAL_CONFERENCE = [
+  {id:"c1",name:"Pre-conference Mixer",desc:"SCADstory. Networking, tours, portfolio reviews. RSVP required as add-on.",day:"tue",time:"17:00–19:00",type:"networking",interestScore:6,themes:["conference"]},
+  {id:"c2",name:"Opening Keynote: Product Research & Insights",desc:"Next-level product research alignment. Yahoo case study on trusted product experiences. Framework for GM partnership.",day:"wed",time:"09:20–09:50",type:"keynote",interestScore:8,themes:["conference"]},
+  {id:"c3",name:"BoltChatAI Session",desc:"Sponsor presentation by BoltChatAI.",day:"wed",time:"09:50–10:20",type:"sponsor",interestScore:4,themes:["conference"]},
+  {id:"c4",name:"Networking Break & Posters",desc:"Coffee, networking, exhibition floor with tools, technologies, SCAD student posters.",day:"wed",time:"10:20–10:50",type:"networking",interestScore:5,themes:["conference"]},
+  {id:"c5",name:"Managing Turbulent Times: Future for UXR",desc:"Panel on layoffs, AI disruption, democratized research. Reality check, identifying opportunities, coping with change.",day:"wed",time:"10:50–11:30",type:"panel",interestScore:8,themes:["conference"]},
+  {id:"c6",name:"Designing with Confidence at Scale (AI)",desc:"How high-performing teams use AI to move faster and make stronger design decisions. Where AI delivers value vs. human judgment.",day:"wed",time:"11:30–12:00",type:"presentation",interestScore:9,themes:["conference"]},
+  {id:"c7",name:"Lunch & Exhibition",desc:"Networking lunch, poster presentations, exhibition floor.",day:"wed",time:"12:00–13:00",type:"networking",interestScore:5,themes:["conference"]},
+  {id:"c8",name:"Bridging Research–Sales Divide",desc:"Research-to-Revenue framework. 340% increase in research usage by GTM teams. Turning insights into sales-ready formats.",day:"wed",time:"13:00–13:30",type:"presentation",interestScore:6,themes:["conference"]},
+  {id:"c9",name:"Elevating UX: Enterprise-Wide UX Org",desc:"Converting fragmented UX teams. Establishing org models, eliminating friction, driving design-led innovation.",day:"wed",time:"13:30–14:00",type:"presentation",interestScore:7,themes:["conference"]},
+  {id:"c10",name:"Dialogue Sponsor Session",desc:"Sponsor presentation by Dialogue.",day:"wed",time:"14:00–14:20",type:"sponsor",interestScore:3,themes:["conference"]},
+  {id:"c11",name:"UX IRL: Measuring Physical Experiences",desc:"Freestyle machine experiences. Measuring emotional/situational UX. Translating lived experience into behavioral metrics.",day:"wed",time:"14:20–14:50",type:"presentation",interestScore:8,themes:["conference"]},
+  {id:"c12",name:"Afternoon Break & Posters",desc:"Coffee break, networking, exhibition floor.",day:"wed",time:"14:50–15:20",type:"networking",interestScore:5,themes:["conference"]},
+  {id:"c13",name:"Don't Be That Researcher: Survey Ethics",desc:"How survey results are manipulated. Deconstructing cognitive biases in survey architecture. Framework for unbiased surveys.",day:"wed",time:"15:20–15:50",type:"presentation",interestScore:7,themes:["conference"]},
+  {id:"c14",name:"Session TBC",desc:"Speaker and topic to be confirmed.",day:"wed",time:"15:50–16:10",type:"presentation",interestScore:3,themes:["conference"]},
+  {id:"c15",name:"AI in UXR: Meta's Approach",desc:"Meta's IC-led AI-native research. Three use cases from Meta, SCAD. Group discussion on co-evolution of the field.",day:"wed",time:"16:10–17:00",type:"presentation",interestScore:9,themes:["conference"]},
+  {id:"c16",name:"Designing Human-AI Feedback Loops",desc:"Why learning from user behavior is critical for AI. Continuous live UX data streams. Co-designing between UXR, design, and ML.",day:"wed",time:"17:00–17:30",type:"presentation",interestScore:9,themes:["conference"]},
+  {id:"c17",name:"Day 1 Closing & Networking Drinks",desc:"Celebrate end of day one with drinks and networking. Poster presentations continue.",day:"wed",time:"17:30–18:30",type:"networking",interestScore:6,themes:["conference"]},
+  {id:"c18",name:"Research to Revenue: 3 Actionable Ways",desc:"Speaking the language of business, connecting to KPIs. Positioning research as strategy partner.",day:"thu",time:"09:15–09:45",type:"presentation",interestScore:7,themes:["conference"]},
+  {id:"c19",name:"Beyond Handoffs: Research as Design Capability",desc:"Transforming research into embedded, continuous design driver. Empowering designers as co-researchers.",day:"thu",time:"09:45–10:15",type:"presentation",interestScore:9,themes:["conference"]},
+  {id:"c20",name:"Scaling Up UX Research Teams",desc:"Building influence and integration. Processes, toolkits, cross-functional touchpoints, metrics and storytelling.",day:"thu",time:"10:15–10:45",type:"presentation",interestScore:7,themes:["conference"]},
+  {id:"c21",name:"Morning Break & Posters",desc:"Coffee, networking, exhibition floor.",day:"thu",time:"10:45–11:15",type:"networking",interestScore:5,themes:["conference"]},
+  {id:"c22",name:"Bridging Academic Excellence to Product",desc:"Panel: theory to practice. Balancing academic rigor with business speed. Clear storytelling over exhaustive reports.",day:"thu",time:"11:15–12:00",type:"panel",interestScore:6,themes:["conference"]},
+  {id:"c23",name:"Listenlabs Sponsor Session",desc:"Sponsor presentation by Listenlabs.",day:"thu",time:"12:00–12:30",type:"sponsor",interestScore:4,themes:["conference"]},
+  {id:"c24",name:"Lunch & Exhibition",desc:"Networking lunch, exhibition floor, poster presentations.",day:"thu",time:"12:30–13:30",type:"networking",interestScore:5,themes:["conference"]},
+  {id:"c25",name:"Measuring UX Impact vs. Tighter ROI",desc:"Building measurable UX outcomes. Linking UX to revenue, retention, safety, trust. A/B testing, dashboards.",day:"thu",time:"13:30–14:00",type:"presentation",interestScore:8,themes:["conference"]},
+  {id:"c26",name:"Synthetic Data in UX Research",desc:"Using synthetic data to prototype and simulate edge cases. Diverse datasets for accessibility/localization without privacy risk.",day:"thu",time:"14:00–14:30",type:"presentation",interestScore:7,themes:["conference"]},
+  {id:"c27",name:"Afternoon Break & Posters",desc:"Coffee, networking, exhibition floor.",day:"thu",time:"14:30–15:00",type:"networking",interestScore:5,themes:["conference"]},
+  {id:"c28",name:"Unlocking Level 5: AI for UX Maturity",desc:"Inside a level-4 team building Level 5. AI toolkit reshaping research lifecycle. Key gaps where AI can't replace human judgment.",day:"thu",time:"15:00–15:30",type:"presentation",interestScore:8,themes:["conference"]},
+  {id:"c29",name:"Beyond the Screen: AR, VR, Voice & Multimodal",desc:"How usability methods evolve for spatial interactions. New tools for immersion, trust, cognitive load. Biometrics ethics.",day:"thu",time:"15:30–16:00",type:"presentation",interestScore:9,themes:["conference"]},
+  {id:"c30",name:"Global Leaders: What's Next for UX",desc:"Panel: tactical to strategic partner. Emerging technologies, ethics, preparing future-ready teams.",day:"thu",time:"16:00–16:45",type:"panel",interestScore:8,themes:["conference"]},
+  {id:"c31",name:"Hit the Town — Conference Closing",desc:"Explore Atlanta's restaurant and bar scene with local guides. Informal closing to deepen new connections.",day:"thu",time:"17:30–18:30",type:"networking",interestScore:7,themes:["conference"]},
+];
+
+const INITIAL_FOOD = [
+  {id:"f1",name:"Flying Biscuit Café",desc:"Biscuits, shrimp & grits, pancakes. Brunch icon.",region:"midtown",price:"$",proximity:100,themes:["food"]},
+  {id:"f2",name:"Busy Bee Café",desc:"Soul food since 1947. Fried chicken, mac & cheese, collards.",region:"downtown",price:"$",proximity:85,themes:["food","history"]},
+  {id:"f3",name:"Fox Bros Bar-B-Q",desc:"Brisket, wings, grits. Texas-Georgia fusion.",region:"eastside",price:"$",proximity:75,themes:["food"]},
+  {id:"f4",name:"Chai Pani",desc:"Beard Award-winning Indian street food. Okra fries, kati rolls.",region:"decatur",price:"$",proximity:60,themes:["food","culture"]},
+  {id:"f5",name:"South City Kitchen",desc:"Upscale Southern. Green tomatoes, chicken, shrimp & grits.",region:"midtown",price:"$$",proximity:100,themes:["food"]},
+  {id:"f6",name:"Hattie B's Hot Chicken",desc:"Nashville-style. Pick heat levels. Midtown location.",region:"midtown",price:"$",proximity:100,themes:["food"]},
+  {id:"f7",name:"Community Q BBQ",desc:"Decatur's best. Pulled pork, ribs, banana pudding.",region:"decatur",price:"$",proximity:60,themes:["food"]},
+  {id:"f8",name:"Home Grown",desc:"Comfy Chicken Biscuit legend. Cash only, small menu.",region:"eastside",price:"$",proximity:75,themes:["food"]},
+  {id:"f9",name:"Gu's Dumplings",desc:"Handmade Chinese at Krog Market. Spicy wontons, noodles.",region:"eastside",price:"$",proximity:75,themes:["food"]},
+  {id:"f10",name:"Ponce City Market Hall",desc:"H&F Burger, Honeysuckle Gelato, rooftop amusement.",region:"midtown",price:"$$",proximity:100,themes:["food","chill"]},
+  {id:"f11",name:"Waffle House",desc:"Atlanta classic. Scattered, smothered, covered. 2am essential.",region:"anywhere",price:"$",proximity:85,themes:["food","nightlife"]},
+  {id:"f12",name:"Ticonderoga Club",desc:"Beard-nominated bar. Seasonal cocktails, eclectic Southern snacks.",region:"eastside",price:"$$",proximity:75,themes:["food","nightlife"]},
+  {id:"f13",name:"Sweet Auburn Curb Market",desc:"Since 1924. Arepa Mia, Grindhouse Burgers, burritos.",region:"downtown",price:"$",proximity:85,themes:["food","culture"]},
+  {id:"f14",name:"Revival Decatur",desc:"Wood-fired brunch. Smoked chicken biscuit, cornmeal pancakes.",region:"decatur",price:"$$",proximity:60,themes:["food"]},
+  {id:"f15",name:"Sublime Doughnuts",desc:"A-Town Cream (peach filling). Morning essential.",region:"midtown",price:"$",proximity:100,themes:["food","chill"]},
+];
+
+const INITIAL_LIBRARY = [
+  {id:"a1",name:"BeltLine Eastside Trail",desc:"2.4-mile paved trail. Street art, restaurants. Walk or bike.",region:"midtown",themes:["outdoors","culture"],adventureScore:5,budgetEst:"$",proximity:100},
+  {id:"a2",name:"Piedmont Park",desc:"185 acres, lake, spring blooms, skyline views. Free.",region:"midtown",themes:["outdoors","chill"],adventureScore:3,budgetEst:"$",proximity:100},
+  {id:"a3",name:"Atlanta Botanical Garden",desc:"30 acres, Canopy Walk, spring blooms. $25.",region:"midtown",themes:["outdoors","culture"],adventureScore:4,budgetEst:"$$",proximity:100},
+  {id:"a4",name:"Chattahoochee River",desc:"3-mile loop, bamboo forest, rock outcrops. 20 min from Midtown.",region:"buckhead",themes:["outdoors"],adventureScore:7,budgetEst:"$",proximity:70},
+  {id:"a5",name:"Stone Mountain",desc:"Hike granite monolith, 360° views. 30 min drive.",region:"anywhere",themes:["outdoors"],adventureScore:8,budgetEst:"$",proximity:50},
+  {id:"a6",name:"MLK National Historical Park",desc:"Birth home, Ebenezer Baptist Church. Free. 2-3 hrs.",region:"downtown",themes:["history","culture"],adventureScore:4,budgetEst:"$",proximity:85},
+  {id:"a7",name:"Civil & Human Rights Center",desc:"Sit-in simulation, Freedom Riders. $20.",region:"downtown",themes:["history","culture"],adventureScore:5,budgetEst:"$$",proximity:85},
+  {id:"a8",name:"High Museum of Art",desc:"Richard Meier building. Civil rights photography. $17.",region:"midtown",themes:["culture"],adventureScore:4,budgetEst:"$$",proximity:100},
+  {id:"a9",name:"Georgia Aquarium",desc:"World's largest. Whale sharks, belugas. $40, 2+ hrs.",region:"downtown",themes:["culture","chill"],adventureScore:5,budgetEst:"$$",proximity:85},
+  {id:"a10",name:"Krog Street Tunnel",desc:"Famous street art corridor. Constantly changing murals. Free.",region:"eastside",themes:["culture","outdoors"],adventureScore:4,budgetEst:"$",proximity:75},
+  {id:"a11",name:"Oakland Cemetery",desc:"1850 garden cemetery. 48 acres, wildflowers. Free.",region:"eastside",themes:["history","outdoors"],adventureScore:4,budgetEst:"$",proximity:75},
+  {id:"a12",name:"Little Five Points",desc:"Vintage shops, Criminal Records vinyl, Jeni's ice cream.",region:"eastside",themes:["culture","chill"],adventureScore:5,budgetEst:"$",proximity:75},
+  {id:"a13",name:"Fernbank Museum & WildWoods",desc:"Dinosaurs, 65-acre forest boardwalk. $20.",region:"decatur",themes:["outdoors","culture"],adventureScore:5,budgetEst:"$$",proximity:60},
+  {id:"a14",name:"Ponce City Market Rooftop",desc:"Mini golf, carnival, 9 Mile Station bar. Skyline views.",region:"midtown",themes:["nightlife","chill"],adventureScore:6,budgetEst:"$$",proximity:100},
+  {id:"a15",name:"East Atlanta Village Night Out",desc:"Dive bars, The EARL live music, Argosy cocktails.",region:"eastside",themes:["nightlife","culture"],adventureScore:7,budgetEst:"$",proximity:70},
+];
+
+const INITIAL_REMINDERS = [
+  {id:"r1",text:"Confirm Canopy Midtown reservation — request high floor for skyline views.",done:false},
+  {id:"r2",text:"Register for UX360 pre-conference mixer (separate RSVP add-on).",done:false},
+  {id:"r3",text:"Download MARTA Breeze app — Airport to Midtown $2.50, 20 min direct.",done:false},
+  {id:"r4",text:"Pack layers — April: 55-78°F. Warm days, cool mornings. Rain likely (light jacket).",done:false},
+  {id:"r5",text:"Comfortable walking shoes — conference + BeltLine + neighborhoods = 12k+ steps/day.",done:false},
+  {id:"r6",text:"Book Georgia Aquarium tickets online if planning to go ($40, timed entry).",done:false},
+  {id:"r7",text:"Cash — some beloved spots (Home Grown, Busy Bee) are cash-only. Bring $50-100.",done:false},
+  {id:"r8",text:"Print/save UX360 badge. Venue: SCADshow, 1470 Spring St NW.",done:false},
+  {id:"r9",text:"Check Dogwood Festival dates (mid-April) — free art + music in Piedmont Park.",done:false},
+];
+
+// ~60% of conference events pre-pinned (interestScore >= 6)
+const INITIAL_PINS = {0:["c1"],1:["c2","c5","c6","c9","c11","c13","c15","c16","c17"],2:["c18","c19","c20","c25","c26","c28","c29","c30","c31"],3:[]};
+
+const STORAGE_KEY = "trip_planner_atl_v3";
+function load(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY))}catch{return null}}
+function save(s){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(s))}catch{}}
+
+// ─── Shared Components ───
+function ThemeTag({theme}){const t=THEMES[theme];if(!t)return null;return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${t.bg} ${t.text} ${t.border} border`}>{t.icon} {t.label}</span>}
+
+function ProximityBadge({value}){const c=value>=90?"text-emerald-400":value>=70?"text-amber-400":"text-orange-400";return <span className={`text-xs font-bold ${c}`}>📍 {value}%</span>}
+
+function InterestBadge({value}){const c=value>=9?"text-red-400":value>=7?"text-orange-400":value>=5?"text-amber-400":"text-slate-400";return <span className={`text-xs font-bold ${c}`}>🔥 {value}/10</span>}
+
+function TypeBadge({type}){const m={keynote:"bg-red-500/20 text-red-300 border-red-500/30",presentation:"bg-blue-500/20 text-blue-300 border-blue-500/30",panel:"bg-purple-500/20 text-purple-300 border-purple-500/30",networking:"bg-green-500/20 text-green-300 border-green-500/30",sponsor:"bg-gray-600/20 text-gray-400 border-gray-500/30"};return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${m[type]||m.presentation}`}>{type}</span>}
+
+function PriceTag({price}){const f=price.length,e=3-f;return <span className="font-mono text-sm"><span className="text-amber-400">{price}</span><span className="text-slate-700">{"$".repeat(Math.max(0,e))}</span></span>}
+
+function DayPicker({onSelect,label}){
+  const [open,setOpen]=useState(false);
+  return <div className="relative"><button onClick={()=>setOpen(!open)} className="px-3 py-1.5 rounded-lg bg-orange-600/20 text-orange-300 text-xs font-medium hover:bg-orange-600/30 transition-colors border border-orange-500/30">{label||"+ Pin to Day"}</button>
+    {open&&<div className="absolute z-30 mt-1 right-0 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-1 min-w-48">{DAYS.map((d,i)=><button key={i} onClick={()=>{onSelect(i);setOpen(false)}} className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 rounded transition-colors"><span className="font-medium text-white">{d.date}</span> — {d.title}</button>)}<button onClick={()=>setOpen(false)} className="w-full text-left px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-700 rounded">Cancel</button></div>}
+  </div>
+}
+
+function Petals(){
+  const petals=useMemo(()=>Array.from({length:10},(_,i)=>({id:i,left:Math.random()*100,delay:Math.random()*15,dur:12+Math.random()*10,size:0.6+Math.random()*0.5})),[]);
+  return <>{petals.map(p=><div key={p.id} className="petal" style={{left:`${p.left}%`,top:'100vh',animationDelay:`${p.delay}s`,animationDuration:`${p.dur}s`,fontSize:`${p.size}rem`,opacity:0.3}}>🍑</div>)}</>
+}
+
+// ─── App ───
+function App(){
+  const saved=load();
+  const [tab,setTab]=useState("itinerary");
+  const [selections,setSelections]=useState(saved?.selections||DAYS.map(()=>0));
+  const [dayPins,setDayPins]=useState(saved?.dayPins||INITIAL_PINS);
+  const [food,setFood]=useState(saved?.food||INITIAL_FOOD);
+  const [library,setLibrary]=useState(saved?.library||INITIAL_LIBRARY);
+  const [conference,setConference]=useState(saved?.conference||INITIAL_CONFERENCE);
+  const [reminders,setReminders]=useState(saved?.reminders||INITIAL_REMINDERS);
+  const [newReminder,setNewReminder]=useState("");
+  const [dayItemOrder,setDayItemOrder]=useState(saved?.dayItemOrder||{});
+  const [hiddenActivities,setHiddenActivities]=useState(saved?.hiddenActivities||{});
+
+  useEffect(()=>{save({selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities})},[selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+
+  const pinToDay=(di,id)=>setDayPins(p=>{const n={...p};const e=[...(n[di]||[])];if(!e.includes(id))e.push(id);n[di]=e;return n});
+  const removePin=(di,id)=>{setDayPins(p=>{const n={...p};n[di]=(n[di]||[]).filter(x=>x!==id);return n});setDayItemOrder(p=>{const n={...p};if(n[di])n[di]=n[di].filter(k=>k!==id);return n})};
+  const totalPins=Object.values(dayPins).reduce((s,a)=>s+a.length,0);
+
+  const allItems=useMemo(()=>{const m={};[...food,...library,...conference].forEach(x=>{m[x.id]=x});return m},[food,library,conference]);
+
+  const hideActivity=(di,key)=>setHiddenActivities(p=>{const n={...p};const s=new Set(n[di]||[]);s.add(key);n[di]=[...s];return n});
+  const restoreActivity=(di,key)=>setHiddenActivities(p=>{const n={...p};n[di]=(n[di]||[]).filter(k=>k!==key);return n});
+
+  const getDayDisplayItems=useCallback((di)=>{
+    const opt=DAYS[di].options[selections[di]]||DAYS[di].options[0];
+    const hidden=new Set(hiddenActivities[di]||[]);
+    const actKeys=opt.activities.map((_,idx)=>'act-'+idx).filter(k=>!hidden.has(k));
+    const pinIds=(dayPins[di]||[]).filter(id=>allItems[id]);
+    const allKeys=[...actKeys,...pinIds];
+    const stored=dayItemOrder[di]||[];
+    const valid=stored.filter(k=>allKeys.includes(k));
+    const remaining=allKeys.filter(k=>!valid.includes(k));
+    const order=[...valid,...remaining];
+    const itemMap={};
+    opt.activities.forEach((a,idx)=>{itemMap['act-'+idx]={type:'act',key:'act-'+idx,...a}});
+    pinIds.forEach(id=>{const p=allItems[id];if(p)itemMap[id]={type:'pin',key:id,...p}});
+    return order.map(k=>itemMap[k]).filter(Boolean);
+  },[selections,dayPins,allItems,dayItemOrder,hiddenActivities]);
+
+  const getHiddenItems=useCallback((di)=>{
+    const opt=DAYS[di].options[selections[di]]||DAYS[di].options[0];
+    const hidden=hiddenActivities[di]||[];
+    return hidden.map(k=>{const idx=parseInt(k.replace('act-',''));return opt.activities[idx]?{key:k,...opt.activities[idx]}:null}).filter(Boolean);
+  },[selections,hiddenActivities]);
+
+  const moveItem=(di,key,direction)=>{
+    const items=getDayDisplayItems(di);
+    const order=items.map(it=>it.key);
+    const idx=order.indexOf(key);
+    const newIdx=idx+direction;
+    if(idx<0||newIdx<0||newIdx>=order.length)return;
+    const newOrder=[...order];
+    [newOrder[idx],newOrder[newIdx]]=[newOrder[newIdx],newOrder[idx]];
+    setDayItemOrder(p=>({...p,[di]:newOrder}));
+  };
+
+  return <div className="min-h-screen bg-[#0c0c1a] text-white relative">
+    <Petals/>
+    <div className="max-w-3xl mx-auto px-4 py-8 relative z-10">
+      <div className="text-center mb-6">
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-400 via-amber-300 to-red-400 bg-clip-text text-transparent">🍑 Atlanta Getaway</h1>
+        <p className="text-slate-400 mt-1">4 days · Canopy by Hilton Midtown · UX360 Summit</p>
+        <p className="text-sm text-slate-500 mt-1">Apr 21 – Apr 24, 2026</p>
+        <p className="text-xs text-slate-500 mt-2">🏨 Canopy by Hilton Atlanta Midtown · ✈️ Arrive Tue 7:20pm · Depart Fri 8:35pm</p>
+      </div>
+
+      <div className="flex gap-1 mb-6 bg-slate-800/60 rounded-xl p-1 border border-slate-700/40">
+        {[{id:"itinerary",label:"Itinerary",icon:"📍"},{id:"library",label:"Activities",icon:"🥾",count:library.length},{id:"food",label:"Food Guide",icon:"🍗",count:food.length},{id:"conference",label:"Conference",icon:"🎤",count:conference.length}].map(t=>
+          <button key={t.id} onClick={()=>setTab(t.id)} className={`flex-1 px-2 py-2.5 rounded-lg text-sm font-medium transition-all ${tab===t.id?"bg-slate-700 text-white shadow":"text-slate-400 hover:text-slate-300"}`}>{t.icon} {t.label}{t.count!=null&&<span className="ml-1 text-xs text-slate-500">({t.count})</span>}</button>
+        )}
+      </div>
+
+      {totalPins>0&&tab!=="itinerary"&&<div className="mb-4 bg-orange-500/10 rounded-lg px-4 py-2 border border-orange-500/20 text-xs text-orange-300">📌 {totalPins} item{totalPins!==1?"s":""} pinned. Switch to Itinerary to see them on each day.</div>}
+
+      {tab==="itinerary"&&<ItineraryTab selections={selections} setSelections={setSelections} dayPins={dayPins} removePin={removePin} allItems={allItems} getDayDisplayItems={getDayDisplayItems} moveItem={moveItem} hideActivity={hideActivity} restoreActivity={restoreActivity} getHiddenItems={getHiddenItems} reminders={reminders} setReminders={setReminders} newReminder={newReminder} setNewReminder={setNewReminder}/>}
+      {tab==="library"&&<LibraryTab library={library} setLibrary={setLibrary} pinToDay={pinToDay} dayPins={dayPins}/>}
+      {tab==="food"&&<FoodTab food={food} setFood={setFood} pinToDay={pinToDay} dayPins={dayPins}/>}
+      {tab==="conference"&&<ConferenceTab conference={conference} setConference={setConference} pinToDay={pinToDay} removePin={removePin} dayPins={dayPins}/>}
+    </div>
+  </div>
+}
+
+// ─── Itinerary Tab ───
+function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity}){
+  const hours=[];for(let h=7;h<=23;h++)hours.push(h);
+  const parseTime=(t)=>{if(!t)return null;const m=t.match(/^(\d{1,2}):(\d{2})/);if(!m)return null;return parseInt(m[1])+parseInt(m[2])/60};
+  const parseEndTime=(t)=>{if(!t)return null;const m=t.match(/(\d{1,2}):(\d{2})$/);if(!m)return null;return parseInt(m[1])+parseInt(m[2])/60};
+  const placed=[];const unplaced=[];
+  displayItems.forEach((item,idx)=>{
+    const start=parseTime(item.time);
+    if(start!==null){const end=parseEndTime(item.time)||start+0.5;placed.push({...item,idx,start,end:Math.max(end,start+0.5)})}
+    else{unplaced.push({...item,idx})}
+  });
+
+  // Column assignment — greedy left-to-right
+  const sorted=[...placed].sort((a,b)=>a.start-b.start||a.end-b.end);
+  const cols=[];
+  sorted.forEach(ev=>{
+    let placed=false;
+    for(let c=0;c<cols.length;c++){
+      if(cols[c]<=ev.start){cols[c]=ev.end;ev.col=c;placed=true;break}
+    }
+    if(!placed){ev.col=cols.length;cols.push(ev.end)}
+  });
+  // Expand groups: find max columns for each overlapping cluster
+  const totalCols=cols.length||1;
+  // Build overlap groups to determine per-group column count
+  const groups=[];
+  sorted.forEach(ev=>{
+    let found=false;
+    for(const g of groups){
+      if(ev.start<g.end){g.end=Math.max(g.end,ev.end);g.items.push(ev);g.maxCol=Math.max(g.maxCol,ev.col+1);found=true;break}
+    }
+    if(!found)groups.push({start:ev.start,end:ev.end,items:[ev],maxCol:ev.col+1});
+  });
+  // Assign group column counts back to events
+  const evColCount=new Map();
+  groups.forEach(g=>{g.items.forEach(ev=>evColCount.set(ev.key,g.maxCol))});
+
+  const SLOT_H=60;
+  const GAP=3;
+  return <div>
+    <div className="relative flex" style={{minHeight:hours.length*SLOT_H}}>
+      <div className="flex-shrink-0 w-12 relative">
+        {hours.map(h=><div key={h} className="absolute w-full text-right pr-2" style={{top:(h-7)*SLOT_H-6}}>
+          <span className="text-[10px] font-mono text-slate-600">{h===0?'12am':h<12?h+'am':h===12?'12pm':(h-12)+'pm'}</span>
+        </div>)}
+      </div>
+      <div className="flex-1 relative" style={{height:hours.length*SLOT_H}}>
+        {hours.map(h=><div key={h} className="absolute w-full border-t border-slate-700/30" style={{top:(h-7)*SLOT_H,height:SLOT_H}}/>)}
+        {sorted.map(item=>{
+          const isPinned=item.type==='pin';
+          const isConfItem=isPinned&&item.themes?.includes("conference");
+          const top=(item.start-7)*SLOT_H;
+          const height=Math.max((item.end-item.start)*SLOT_H,36);
+          const numCols=evColCount.get(item.key)||1;
+          const colW=100/numCols;
+          const left=item.col*colW;
+          return <div key={item.key} className={`absolute rounded-lg px-2.5 py-1.5 border overflow-hidden group/cal ${isPinned?(isConfItem?"bg-red-500/10 border-red-500/30":"bg-orange-500/10 border-orange-500/30"):"bg-slate-700/60 border-slate-600/40"}`} style={{top,height,left:left+'%',width:`calc(${colW}% - ${GAP}px)`}}>
+            <div className="flex items-start gap-1.5 h-full">
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="flex items-center gap-1 flex-wrap"><span className="text-[10px] font-mono text-slate-500 flex-shrink-0">{item.time}</span><span className={`text-xs font-medium text-white ${height<50?"truncate":""}`}>{item.name}</span>{isPinned&&<span className="text-[9px] text-orange-400 font-medium px-1 rounded bg-orange-500/10 border border-orange-500/20 flex-shrink-0">PIN</span>}</div>
+                {height>=50&&<div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{item.desc}</div>}
+                {height>=72&&(item.themes||[]).length>0&&<div className="flex gap-1 mt-1 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}
+              </div>
+              <button onClick={()=>isPinned?removePin(dayIndex,item.key):hideActivity(dayIndex,item.key)} className="opacity-0 group-hover/cal:opacity-100 text-slate-500 hover:text-red-400 transition-all flex-shrink-0 text-xs" title="Remove">🗑</button>
+            </div>
+          </div>
+        })}
+      </div>
+    </div>
+    {unplaced.length>0&&<div className="mt-3 pt-3 border-t border-dashed border-slate-700/50"><div className="text-xs text-slate-500 mb-2">📌 Unscheduled items</div><div className="space-y-1.5">{unplaced.map(item=>{
+      const isPinned=item.type==='pin';
+      const isConfItem=isPinned&&item.themes?.includes("conference");
+      return <div key={item.key} className={`flex items-center gap-2 rounded-lg px-3 py-2 border group/cal ${isPinned?(isConfItem?"bg-red-500/5 border-red-500/20":"bg-orange-500/5 border-orange-500/20"):"bg-slate-700/40 border-slate-600/30"}`}>
+        {isPinned&&<div className="flex gap-0.5 flex-shrink-0">
+          <button onClick={()=>moveItem(dayIndex,item.key,-1)} className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-slate-500 hover:text-white hover:bg-slate-700 transition-colors">▲</button>
+          <button onClick={()=>moveItem(dayIndex,item.key,1)} className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-slate-500 hover:text-white hover:bg-slate-700 transition-colors">▼</button>
+        </div>}
+        <div className="flex-1 min-w-0"><span className="text-sm font-medium text-white">{item.name}</span>{(item.themes||[]).length>0&&<div className="flex gap-1 mt-1 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}</div>
+        <button onClick={()=>isPinned?removePin(dayIndex,item.key):hideActivity(dayIndex,item.key)} className="opacity-0 group-hover/cal:opacity-100 text-slate-500 hover:text-red-400 transition-all flex-shrink-0 text-sm">🗑</button>
+      </div>
+    })}</div></div>}
+  </div>
+}
+
+function ItineraryTab({selections,setSelections,dayPins,removePin,allItems,getDayDisplayItems,moveItem,hideActivity,restoreActivity,getHiddenItems,reminders,setReminders,newReminder,setNewReminder}){
+  const [expandedDay,setExpandedDay]=useState(null);
+  const [calView,setCalView]=useState({});
+
+  const stats=useMemo(()=>{
+    let totalVibe=0,confDays=0,bLow=0,bHigh=0;
+    DAYS.forEach((day,i)=>{const o=day.options[selections[i]]||day.options[0];totalVibe+=o.vibeScore;if(o.themes.includes("conference"))confDays++;bLow+=o.budgetLow;bHigh+=o.budgetHigh});
+    return{totalVibe,maxVibe:DAYS.length*10,confDays,bLow,bHigh}
+  },[selections]);
+
+  const vPct=Math.round((stats.totalVibe/stats.maxVibe)*100);
+  const confStats=useMemo(()=>{
+    const allPinned=new Set();Object.values(dayPins).forEach(a=>a.forEach(id=>allPinned.add(id)));
+    const totalConf=Object.values(allItems).filter(x=>x.themes?.includes("conference")).length;
+    const pinnedConf=[...allPinned].filter(id=>allItems[id]?.themes?.includes("conference")).length;
+    return{total:totalConf,pinned:pinnedConf,pct:totalConf>0?Math.round((pinnedConf/totalConf)*100):0}
+  },[dayPins,allItems]);
+  const maxConf=()=>setSelections(DAYS.map(d=>{let b=0;d.options.forEach((o,i)=>{if(o.themes.includes("conference"))b=i});return b}));
+  const maxVibe=()=>setSelections(DAYS.map(d=>{let b=0,s=-1;d.options.forEach((o,i)=>{if(o.vibeScore>s){s=o.vibeScore;b=i}});return b}));
+  const resetAll=()=>setSelections(DAYS.map(()=>0));
+
+  const rc={city:"border-l-orange-500",nature:"border-l-emerald-500"};
+
+  return <>
+    <div className="flex gap-2 justify-center mb-6 flex-wrap">
+      <button onClick={maxConf} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/30 transition-colors border border-red-500/30">🎤 Max Conference</button>
+      <button onClick={maxVibe} className="px-3 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 text-xs font-medium hover:bg-orange-500/30 transition-colors border border-orange-500/30">⚡ Max Vibe</button>
+      <button onClick={resetAll} className="px-3 py-1.5 rounded-lg bg-slate-700/60 text-slate-400 text-xs font-medium hover:bg-slate-600/60 transition-colors border border-slate-600/30">Reset</button>
+    </div>
+
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/40 text-center"><div className="text-2xl font-bold text-red-400">{stats.confDays}</div><div className="text-xs text-slate-500">Conference Days</div></div>
+      <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/40 text-center"><div className="text-2xl font-bold text-violet-400">{stats.totalVibe}</div><div className="text-xs text-slate-500">Vibe Score</div></div>
+      <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/40 text-center"><div className="text-2xl font-bold text-amber-400">${stats.bLow}</div><div className="text-xs text-slate-500">Est. Low</div></div>
+      <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/40 text-center"><div className="text-2xl font-bold text-amber-300">${stats.bHigh}</div><div className="text-xs text-slate-500">Est. High</div></div>
+    </div>
+
+    {(()=>{const lvl=vPct>=90?"LEGENDARY":vPct>=75?"EPIC":vPct>=60?"AWESOME":vPct>=45?"SOLID":vPct>=30?"CHILL":"MEH";const clr=vPct>=90?"from-red-500 via-orange-400 to-amber-300":vPct>=75?"from-orange-500 via-amber-400 to-yellow-300":vPct>=60?"from-amber-500 via-yellow-400 to-lime-300":vPct>=45?"from-emerald-500 via-teal-400 to-cyan-300":vPct>=30?"from-sky-500 via-blue-400 to-indigo-300":"from-slate-500 via-slate-400 to-slate-300";const txtClr=vPct>=90?"text-red-400":vPct>=75?"text-orange-400":vPct>=60?"text-amber-400":vPct>=45?"text-emerald-400":vPct>=30?"text-sky-400":"text-slate-400";const emoji=vPct>=90?"🔥🔥🔥":vPct>=75?"🔥🔥":vPct>=60?"🔥":vPct>=45?"✨":vPct>=30?"👌":"😴";
+    const cp=confStats.pct;const cLvl=cp>=90?"ALL IN":cp>=70?"COMMITTED":cp>=50?"BALANCED":cp>=30?"SELECTIVE":"SKIPPING";const cClr=cp>=90?"from-red-500 via-rose-400 to-pink-300":cp>=70?"from-rose-500 via-pink-400 to-fuchsia-300":cp>=50?"from-purple-500 via-violet-400 to-indigo-300":cp>=30?"from-indigo-500 via-blue-400 to-cyan-300":"from-slate-500 via-slate-400 to-slate-300";const cTxtClr=cp>=90?"text-red-400":cp>=70?"text-rose-400":cp>=50?"text-purple-400":cp>=30?"text-indigo-400":"text-slate-400";const cEmoji=cp>=90?"🎤🎤🎤":cp>=70?"🎤🎤":cp>=50?"🎤":cp>=30?"👀":"🏖";
+    return <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/30">
+        <div className="flex items-center justify-between mb-2"><span className="text-xs text-slate-500">Awesomeness Scale</span><span className={`text-sm font-bold ${txtClr}`}>{emoji} {lvl}</span></div>
+        <div className="w-full h-3 bg-slate-700/60 rounded-full overflow-hidden"><div className={`h-full rounded-full bg-gradient-to-r ${clr} transition-all duration-500`} style={{width:vPct+'%'}}/></div>
+        <div className="flex justify-between mt-1.5"><span className="text-[10px] text-slate-600">Meh</span><span className="text-[10px] text-slate-600">Legendary</span></div>
+      </div>
+      <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/30">
+        <div className="flex items-center justify-between mb-2"><span className="text-xs text-slate-500">Conference Attendance</span><span className={`text-sm font-bold ${cTxtClr}`}>{cEmoji} {cLvl}</span></div>
+        <div className="w-full h-3 bg-slate-700/60 rounded-full overflow-hidden"><div className={`h-full rounded-full bg-gradient-to-r ${cClr} transition-all duration-500`} style={{width:cp+'%'}}/></div>
+        <div className="flex justify-between mt-1.5"><span className="text-[10px] text-slate-600">Skipping</span><span className="text-[10px] text-slate-600">{confStats.pinned}/{confStats.total} sessions</span></div>
+      </div>
+    </div>})()}
+
+    <div className="space-y-3">
+      {DAYS.map((day,i)=>{
+        const opt=day.options[selections[i]]||day.options[0];
+        const pins=(dayPins[i]||[]).filter(id=>allItems[id]);
+        const exp=expandedDay===i;
+        const displayItems=exp?getDayDisplayItems(i):[];
+        return <div key={i} className={`bg-slate-800/80 rounded-xl border border-slate-700/60 overflow-hidden transition-all duration-300 border-l-4 ${rc[day.region]||"border-l-slate-600"}`}>
+          <button onClick={()=>setExpandedDay(exp?null:i)} className="w-full px-5 py-4 flex items-center gap-4 hover:bg-slate-700/30 transition-colors text-left">
+            <div className="flex-shrink-0 text-center w-12"><div className="text-xs text-slate-500 uppercase">{day.dow}</div><div className="text-lg font-bold text-white">{day.date.split(" ")[2]||day.date.split(" ")[1]}</div></div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{day.title}</span><span className="text-slate-600">—</span><span className="text-sm text-slate-300">{opt.title}</span>{pins.length>0&&<span className="text-xs text-orange-400 font-medium">+{pins.length} pinned</span>}</div>
+              <div className="flex gap-1 mt-1 flex-wrap">{opt.themes.map(t=><ThemeTag key={t} theme={t}/>)}</div>
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-3">
+              <div className="hidden sm:block text-right"><div className="text-xs text-slate-500">Vibe</div><div className="text-sm font-bold text-violet-400">{opt.vibeScore}/10</div></div>
+              <svg className={`w-5 h-5 text-slate-400 transition-transform ${exp?"rotate-180":""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+            </div>
+          </button>
+          {exp&&<div className="px-5 pb-5 border-t border-slate-700/40">
+            {day.options.length>1&&<div className="flex gap-2 mt-4 mb-4 flex-wrap">{day.options.map((o,oi)=><button key={o.id} onClick={()=>{const n=[...selections];n[i]=oi;setSelections(n)}} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${oi===selections[i]?"bg-orange-600 text-white shadow-lg shadow-orange-600/20":"bg-slate-700/60 text-slate-300 hover:bg-slate-600/60"}`}><div>{o.title}</div><div className={`text-xs mt-0.5 ${oi===selections[i]?"text-orange-200":"text-slate-500"}`}>{o.subtitle}</div></button>)}</div>}
+            <div className="flex gap-4 mb-4 flex-wrap text-xs items-center"><span className="text-slate-500">Vibe: <span className="font-bold text-violet-400">{opt.vibeScore}/10</span></span><span className="text-slate-500">Budget: <span className="font-bold text-amber-400">${opt.budgetLow}–${opt.budgetHigh}</span></span><span className="flex-1"/><button onClick={()=>setCalView(p=>({...p,[i]:!p[i]}))} className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${calView[i]?"bg-sky-500/20 text-sky-400 border-sky-500/30":"bg-slate-700/60 text-slate-400 border-slate-600/30 hover:bg-slate-600/60"}`}>{calView[i]?"📋 List":"🗓 Calendar"}</button></div>
+            {calView[i]?<DayCalendarView displayItems={displayItems} dayIndex={i} moveItem={moveItem} removePin={removePin} hideActivity={hideActivity}/>:<div className="space-y-3">{displayItems.map((item,idx)=>{
+              const isPinned=item.type==='pin';
+              const isConfItem=isPinned&&item.themes?.includes("conference");
+              return <div key={item.key} className={`flex gap-3 group/item ${isPinned?`rounded-lg p-2 -mx-2 border ${isConfItem?"bg-red-500/5 border-red-500/20":"bg-orange-500/5 border-orange-500/20"}`:""}`}>
+                {isPinned?<div className="flex flex-col gap-0.5 flex-shrink-0 mt-0.5">
+                  <button onClick={()=>moveItem(i,item.key,-1)} disabled={idx===0} className={`w-5 h-5 flex items-center justify-center rounded text-[10px] transition-colors ${idx===0?"text-slate-700 cursor-default":"text-slate-500 hover:text-white hover:bg-slate-700"}`}>▲</button>
+                  <button onClick={()=>moveItem(i,item.key,1)} disabled={idx===displayItems.length-1} className={`w-5 h-5 flex items-center justify-center rounded text-[10px] transition-colors ${idx===displayItems.length-1?"text-slate-700 cursor-default":"text-slate-500 hover:text-white hover:bg-slate-700"}`}>▼</button>
+                </div>:<div className="w-5 flex-shrink-0"/>}
+                <div className="flex-shrink-0 w-14 text-right"><span className="text-xs font-mono text-slate-500">{item.time||"📌"}</span></div>
+                <div className="flex-shrink-0 w-px bg-slate-700 relative"><div className={`absolute top-1 -left-1 w-2.5 h-2.5 rounded-full border-2 border-slate-800 transition-colors ${isPinned?(isConfItem?"bg-red-500":"bg-orange-500"):"bg-slate-600 group-hover/item:bg-orange-500"}`}/></div>
+                <div className="flex-1 pb-1">
+                  <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium text-white">{item.name}</span>{isPinned&&<span className="text-[10px] text-orange-400 font-medium px-1.5 py-0.5 rounded bg-orange-500/10 border border-orange-500/20">PINNED</span>}{item.interestScore&&<InterestBadge value={item.interestScore}/>}{item.proximity!=null&&<ProximityBadge value={item.proximity}/>}{item.price&&<PriceTag price={item.price}/>}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{item.desc}</div>
+                  {(item.themes||[]).length>0&&<div className="flex gap-1 mt-1.5 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}
+                </div>
+                <button onClick={()=>isPinned?removePin(i,item.key):hideActivity(i,item.key)} className="opacity-0 group-hover/item:opacity-100 text-slate-500 hover:text-red-400 transition-all flex-shrink-0 text-base mt-1" title="Remove">🗑</button>
+              </div>
+            })}</div>}
+            {(()=>{const hi=getHiddenItems(i);return hi.length>0?<div className="mt-4 pt-3 border-t border-dashed border-slate-700/50"><div className="flex items-center gap-2 mb-2"><span className="text-xs text-slate-500">Removed events</span></div><div className="flex gap-2 flex-wrap">{hi.map(h=><button key={h.key} onClick={()=>restoreActivity(i,h.key)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/30 text-xs text-slate-400 hover:text-white hover:border-slate-500 transition-colors"><span>↩</span><span>{h.name}</span><span className="font-mono text-slate-600">{h.time}</span></button>)}</div></div>:null})()}
+          </div>}
+        </div>
+      })}
+    </div>
+
+    {/* Reminders */}
+    <div className="mt-8 bg-slate-800/60 rounded-xl border border-slate-700/30 overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-700/30 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-300">📋 Pre-Trip Checklist</h3><span className="text-xs text-slate-500">{reminders.filter(r=>r.done).length}/{reminders.length}</span></div>
+      <div className="px-5 py-3 space-y-2">{reminders.map(r=><div key={r.id} className="flex items-start gap-3 group/rem"><label className="flex items-start gap-3 cursor-pointer flex-1 min-w-0"><input type="checkbox" checked={r.done} onChange={()=>setReminders(p=>p.map(x=>x.id===r.id?{...x,done:!x.done}:x))} className="mt-0.5 rounded border-slate-600 bg-slate-700 cursor-pointer"/><span className={`text-sm transition-all ${r.done?"text-slate-600 line-through":"text-slate-300 group-hover/rem:text-white"}`}>{r.text}</span></label><button onClick={()=>setReminders(p=>p.filter(x=>x.id!==r.id))} className="opacity-0 group-hover/rem:opacity-100 text-slate-500 hover:text-red-400 transition-all flex-shrink-0 text-sm mt-0.5" title="Remove">🗑</button></div>)}</div>
+      <div className="px-5 py-3 border-t border-slate-700/30 flex gap-2"><input value={newReminder} onChange={e=>setNewReminder(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newReminder.trim()){setReminders(p=>[...p,{id:"r-"+Date.now(),text:newReminder.trim(),done:false}]);setNewReminder("")}}} placeholder="Add a reminder..." className="flex-1 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/><button onClick={()=>{if(newReminder.trim()){setReminders(p=>[...p,{id:"r-"+Date.now(),text:newReminder.trim(),done:false}]);setNewReminder("")}}} className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-400 text-xs font-medium hover:bg-slate-600 transition-colors">Add</button></div>
+    </div>
+
+    <div className="mt-6 bg-slate-800/60 rounded-xl p-5 border border-slate-700/30 text-sm text-slate-400 space-y-2">
+      <p className="font-medium text-slate-300">Planning Tips</p>
+      <p>🌡 <strong className="text-slate-300">Weather</strong> — April in Atlanta: 55-78°F, occasional showers. Layers + light rain jacket.</p>
+      <p>🚇 <strong className="text-slate-300">MARTA</strong> — Airport to Midtown in 20 min for $2.50. Rideshare for off-rail neighborhoods.</p>
+      <p>🎤 <strong className="text-slate-300">UX360</strong> — SCADshow is a 10-min walk from Canopy by Hilton. 1470 Spring St NW.</p>
+      <p>👟 <strong className="text-slate-300">Walking</strong> — Conference + BeltLine + neighborhoods = 12k+ steps/day.</p>
+    </div>
+  </>
+}
+
+// ─── Library Tab ───
+function LibraryTab({library,setLibrary,pinToDay,dayPins}){
+  const [ft,setFt]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({name:"",desc:"",region:"midtown",themes:[],adventureScore:5,budgetEst:"$$",proximity:100});
+  const pinnedIds=useMemo(()=>{const s=new Set();Object.values(dayPins).forEach(a=>a.forEach(id=>s.add(id)));return s},[dayPins]);
+  const filtered=ft?library.filter(x=>x.themes.includes(ft)):library;
+  const removeItem=id=>setLibrary(p=>p.filter(x=>x.id!==id));
+  const addItem=()=>{if(!form.name.trim())return;setLibrary(p=>[...p,{...form,id:"a-"+Date.now(),themes:form.themes.length?form.themes:["chill"]}]);setForm({name:"",desc:"",region:"midtown",themes:[],adventureScore:5,budgetEst:"$$",proximity:100});setShowForm(false)};
+  const toggleTheme=t=>setForm(p=>({...p,themes:p.themes.includes(t)?p.themes.filter(x=>x!==t):[...p.themes,t]}));
+
+  return <>
+    <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-white">🥾 Activity Library</h2><button onClick={()=>setShowForm(!showForm)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500 transition-colors">{showForm?"Cancel":"+ New Activity"}</button></div>
+    <p className="text-sm text-slate-400 mb-4">Browse activities and pin them to specific days. Proximity shows distance from Midtown (hotel).</p>
+    {showForm&&<div className="bg-slate-800/80 rounded-xl border border-emerald-500/30 p-4 mb-4 space-y-3">
+      <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="Activity name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-emerald-500 outline-none"/>
+      <textarea value={form.desc} onChange={e=>setForm(p=>({...p,desc:e.target.value}))} placeholder="Description" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-emerald-500 outline-none resize-none"/>
+      <div className="flex gap-4 flex-wrap">
+        <div><label className="text-xs text-slate-500 block mb-1">Region</label><select value={form.region} onChange={e=>setForm(p=>({...p,region:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600">{REGIONS.map(r=><option key={r} value={r}>{REGION_LABELS[r]}</option>)}</select></div>
+        <div><label className="text-xs text-slate-500 block mb-1">Proximity %</label><input type="number" min={0} max={100} value={form.proximity} onChange={e=>setForm(p=>({...p,proximity:+e.target.value}))} className="w-20 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"/></div>
+      </div>
+      <div><label className="text-xs text-slate-500 block mb-1">Tags</label><div className="flex gap-1.5 flex-wrap">{Object.entries(THEMES).filter(([k])=>k!=="conference").map(([k,t])=><button key={k} onClick={()=>toggleTheme(k)} className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${form.themes.includes(k)?`${t.bg} ${t.text} border ${t.border}`:"bg-slate-700/60 text-slate-500 hover:bg-slate-600/60"}`}>{t.icon} {t.label}</button>)}</div></div>
+      <button onClick={addItem} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 transition-colors">Add to Library</button>
+    </div>}
+    <div className="flex gap-1.5 mb-4 flex-wrap">
+      <button onClick={()=>setFt(null)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${!ft?"bg-white text-slate-900":"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>All</button>
+      {Object.entries(THEMES).filter(([k])=>k!=="conference").map(([k,t])=><button key={k} onClick={()=>setFt(ft===k?null:k)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${ft===k?`${t.bg} ${t.text} border ${t.border}`:"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>{t.icon} {t.label}</button>)}
+    </div>
+    <div className="space-y-2">{filtered.map(item=>{const pinned=pinnedIds.has(item.id);return <div key={item.id} className={`rounded-xl border p-4 ${pinned?"bg-emerald-500/10 border-emerald-500/30":"bg-slate-800/80 border-slate-700/40"}`}><div className="flex items-start gap-3"><div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{item.name}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}{item.budgetEst&&<PriceTag price={item.budgetEst}/>}<span className="text-xs text-slate-500">{REGION_LABELS[item.region]}</span><ProximityBadge value={item.proximity}/></div>
+      <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
+      <div className="flex gap-1 mt-2 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>
+    </div><div className="flex items-center gap-2 flex-shrink-0"><DayPicker onSelect={di=>pinToDay(di,item.id)}/>{item.id.startsWith("a-")&&<button onClick={()=>removeItem(item.id)} className="text-slate-600 hover:text-red-400 transition-colors text-sm">✕</button>}</div></div></div>})}</div>
+    {filtered.length===0&&<p className="text-center text-slate-600 py-8 text-sm">No activities match this filter.</p>}
+  </>
+}
+
+// ─── Food Tab ───
+function FoodTab({food,setFood,pinToDay,dayPins}){
+  const [fr,setFr]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({name:"",desc:"",region:"midtown",price:"$$",proximity:100,themes:["food"]});
+  const pinnedIds=useMemo(()=>{const s=new Set();Object.values(dayPins).forEach(a=>a.forEach(id=>s.add(id)));return s},[dayPins]);
+  const regions=[...new Set(food.map(f=>f.region))];
+  const filtered=fr?food.filter(f=>f.region===fr):food;
+  const grouped={};filtered.forEach(f=>{if(!grouped[f.region])grouped[f.region]=[];grouped[f.region].push(f)});
+  const removeItem=id=>setFood(p=>p.filter(x=>x.id!==id));
+  const addItem=()=>{if(!form.name.trim())return;setFood(p=>[...p,{...form,id:"f-"+Date.now(),themes:["food"]}]);setForm({name:"",desc:"",region:"midtown",price:"$$",proximity:100,themes:["food"]});setShowForm(false)};
+
+  return <>
+    <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-white">🍗 Food Guide</h2><button onClick={()=>setShowForm(!showForm)} className="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-medium hover:bg-orange-500 transition-colors">{showForm?"Cancel":"+ Add Food"}</button></div>
+    <p className="text-sm text-slate-400 mb-4">Food wishlist by neighborhood. Proximity shows distance from Midtown.</p>
+    {showForm&&<div className="bg-slate-800/80 rounded-xl border border-orange-500/30 p-4 mb-4 space-y-3">
+      <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="Food / Restaurant name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
+      <textarea value={form.desc} onChange={e=>setForm(p=>({...p,desc:e.target.value}))} placeholder="Notes" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none resize-none"/>
+      <div className="flex gap-4 flex-wrap"><div><label className="text-xs text-slate-500 block mb-1">Region</label><select value={form.region} onChange={e=>setForm(p=>({...p,region:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600">{REGIONS.map(r=><option key={r} value={r}>{REGION_LABELS[r]}</option>)}</select></div><div><label className="text-xs text-slate-500 block mb-1">Price</label><select value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"><option value="$">$ Budget</option><option value="$$">$$ Mid</option><option value="$$$">$$$ Splurge</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Proximity %</label><input type="number" min={0} max={100} value={form.proximity} onChange={e=>setForm(p=>({...p,proximity:+e.target.value}))} className="w-20 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"/></div></div>
+      <button onClick={addItem} className="px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-medium hover:bg-orange-500 transition-colors">Add to Guide</button>
+    </div>}
+    <div className="flex gap-1.5 mb-5 flex-wrap">
+      <button onClick={()=>setFr(null)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${!fr?"bg-white text-slate-900":"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>All</button>
+      {regions.map(r=><button key={r} onClick={()=>setFr(fr===r?null:r)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${fr===r?"bg-orange-500/20 text-orange-400 border border-orange-500/30":"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>{REGION_LABELS[r]||r}</button>)}
+    </div>
+    {Object.entries(grouped).map(([region,items])=><div key={region} className="mb-6"><h3 className="text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2"><span className="text-orange-400">🍗</span> {REGION_LABELS[region]||region} <span className="text-xs text-slate-600">({items.length})</span></h3><div className="space-y-2">{items.map(item=>{const pinned=pinnedIds.has(item.id);return <div key={item.id} className={`rounded-xl border p-4 ${pinned?"bg-emerald-500/10 border-emerald-500/30":"bg-slate-800/80 border-slate-700/40"}`}><div className="flex items-start gap-3"><div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{item.name}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}<PriceTag price={item.price}/><ProximityBadge value={item.proximity}/></div>
+      <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
+      {item.themes&&<div className="flex gap-1 mt-2 flex-wrap">{item.themes.map(t=><ThemeTag key={t} theme={t}/>)}</div>}
+    </div><div className="flex items-center gap-2 flex-shrink-0"><DayPicker onSelect={di=>pinToDay(di,item.id)} label="📌 Pin"/>{item.id.startsWith("f-")&&<button onClick={()=>removeItem(item.id)} className="text-slate-600 hover:text-red-400 transition-colors text-sm">✕</button>}</div></div></div>})}</div></div>)}
+    {filtered.length===0&&<p className="text-center text-slate-600 py-8 text-sm">No food items match.</p>}
+  </>
+}
+
+// ─── Conference Tab ───
+function ConferenceTab({conference,setConference,pinToDay,removePin,dayPins}){
+  const [typeFilter,setTypeFilter]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({name:"",desc:"",day:"wed",time:"09:00–10:00",type:"presentation",interestScore:5});
+  const pinnedIds=useMemo(()=>{const s=new Set();Object.values(dayPins).forEach(a=>a.forEach(id=>s.add(id)));return s},[dayPins]);
+
+  const types=[...new Set(conference.map(c=>c.type))];
+  const filtered=typeFilter?conference.filter(c=>c.type===typeFilter):conference;
+  const byDay={tue:[],wed:[],thu:[]};filtered.forEach(e=>{if(byDay[e.day])byDay[e.day].push(e)});
+
+  const removeItem=id=>setConference(p=>p.filter(x=>x.id!==id));
+  const addItem=()=>{if(!form.name.trim())return;setConference(p=>[...p,{...form,id:"c-"+Date.now(),themes:["conference"]}]);setForm({name:"",desc:"",day:"wed",time:"09:00–10:00",type:"presentation",interestScore:5});setShowForm(false)};
+
+  const dayLabels={tue:"Tue Apr 21 — Pre-Conference",wed:"Wed Apr 22 — Day 1",thu:"Thu Apr 23 — Day 2"};
+  const dayIdx={tue:0,wed:1,thu:2};
+
+  return <>
+    <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-white">🎤 UX360 Conference</h2><button onClick={()=>setShowForm(!showForm)} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-500 transition-colors">{showForm?"Cancel":"+ Add Event"}</button></div>
+    <p className="text-sm text-slate-400 mb-4">Full conference schedule. Pin sessions to your itinerary days. Interest score rates relevance for a UX designer.</p>
+    {showForm&&<div className="bg-slate-800/80 rounded-xl border border-red-500/30 p-4 mb-4 space-y-3">
+      <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="Event name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-red-500 outline-none"/>
+      <textarea value={form.desc} onChange={e=>setForm(p=>({...p,desc:e.target.value}))} placeholder="Description" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-red-500 outline-none resize-none"/>
+      <div className="flex gap-3 flex-wrap">
+        <div><label className="text-xs text-slate-500 block mb-1">Day</label><select value={form.day} onChange={e=>setForm(p=>({...p,day:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"><option value="tue">Tue (Pre)</option><option value="wed">Wed (Day 1)</option><option value="thu">Thu (Day 2)</option></select></div>
+        <div><label className="text-xs text-slate-500 block mb-1">Time</label><input value={form.time} onChange={e=>setForm(p=>({...p,time:e.target.value}))} className="w-32 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600 focus:border-red-500 outline-none"/></div>
+        <div><label className="text-xs text-slate-500 block mb-1">Type</label><select value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"><option value="presentation">Presentation</option><option value="keynote">Keynote</option><option value="panel">Panel</option><option value="networking">Networking</option></select></div>
+        <div><label className="text-xs text-slate-500 block mb-1">Interest</label><input type="number" min={1} max={10} value={form.interestScore} onChange={e=>setForm(p=>({...p,interestScore:+e.target.value}))} className="w-16 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"/></div>
+      </div>
+      <button onClick={addItem} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-500 transition-colors">Add Event</button>
+    </div>}
+    <div className="flex gap-1.5 mb-5 flex-wrap">
+      <button onClick={()=>setTypeFilter(null)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${!typeFilter?"bg-white text-slate-900":"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>All</button>
+      {types.map(t=><button key={t} onClick={()=>setTypeFilter(typeFilter===t?null:t)} className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${typeFilter===t?"bg-red-500/20 text-red-400 border border-red-500/30":"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>{t}</button>)}
+    </div>
+    {["tue","wed","thu"].map(day=>{const items=byDay[day];if(!items||items.length===0)return null;return <div key={day} className="mb-6">
+      <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2"><span className="text-red-400">🎤</span> {dayLabels[day]} <span className="text-xs text-slate-600">({items.length})</span></h3>
+      <div className="space-y-2">{items.map(event=>{const pinned=pinnedIds.has(event.id);return <div key={event.id} className={`rounded-xl border p-4 transition-colors ${pinned?"bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-500/50":"bg-slate-800/80 border-red-500/20 hover:border-red-500/40"}`}><div className="flex items-start gap-3"><div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-1"><TypeBadge type={event.type}/><InterestBadge value={event.interestScore}/><span className="text-xs font-mono text-slate-500">{event.time}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}</div>
+        <div className="text-sm font-semibold text-white">{event.name}</div>
+        <p className="text-xs text-slate-400 mt-1">{event.desc}</p>
+      </div><div className="flex items-center gap-2 flex-shrink-0">{pinned?<button onClick={()=>removePin(dayIdx[day],event.id)} className="px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 text-xs font-medium hover:bg-red-500/20 hover:text-red-400 transition-colors border border-emerald-500/30 hover:border-red-500/30">✓ Attending</button>:<button onClick={()=>pinToDay(dayIdx[day],event.id)} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 text-xs font-medium hover:bg-red-500/30 transition-colors border border-red-500/30">+ Attend</button>}{event.id.startsWith("c-")&&<button onClick={()=>removeItem(event.id)} className="text-slate-600 hover:text-red-400 transition-colors text-sm">✕</button>}</div></div></div>})}</div>
+    </div>})}
+  </>
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
