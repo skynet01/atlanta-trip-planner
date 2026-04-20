@@ -61,3 +61,11 @@ Add lightweight session auth/sharing so the planner is no longer one global shar
 - This is intentionally lightweight, not secure production auth.
 - Local passphrase storage is a convenience tradeoff for this short-lived conference app.
 - Shared-link collaborators do not need the passphrase; the pass is only for owner recovery from a different browser/incognito.
+
+## Deployment
+- **Production host:** Oracle Cloud Ubuntu ARM instance at `ubuntu@161.153.60.47` (`instance-20260303-0858`).
+- **App dir:** `/opt/trip-planner/`. Runs under pm2 as `trip-planner`, listening on `127.0.0.1:3456` with base path `/atlanta-trip` (fronted by an existing reverse proxy).
+- **Deploy procedure:** `scp server.js atlanta-trip-planner.html package.json` into `/opt/trip-planner/`, `npm install --omit=dev`, `pm2 restart trip-planner`. `better-sqlite3` is a native binding — always run `npm install` on the server so the binary is rebuilt for ARM.
+- **DB:** `/opt/trip-planner/trip-planner.db` (SQLite, WAL mode). Back up the `.db`, `.db-shm`, `.db-wal` trio together.
+- **Previous deploy (2026-04-20) backup:** `/opt/trip-planner.bak-20260420-100420/` — contains the pre-session-auth single-`state`-row schema. Safe to delete once confirmed no salvage is needed.
+- **GitHub origin:** `git@github.com:skynet01/atlanta-trip-planner.git` (public).
