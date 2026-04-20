@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Atlanta Getaway — Trip Planner</title>
+  <title>UX360 Summit</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/atlanta-trip/socket.io/socket.io.js"></script>
   <style>
     @keyframes float { 0%,100%{transform:translateY(0) rotate(0deg);opacity:0} 10%{opacity:0.5} 90%{opacity:0.3} 100%{transform:translateY(-100vh) rotate(360deg);opacity:0} }
     .petal{position:fixed;pointer-events:none;z-index:0;animation:float linear infinite;font-size:1rem}
@@ -196,13 +197,18 @@ const INITIAL_REMINDERS = [
 // ~60% of conference events pre-pinned (interestScore >= 6)
 const INITIAL_PINS = {0:["c1"],1:["c2","c5","c6","c9","c11","c13","c15","c16","c17"],2:["c18","c19","c20","c25","c26","c28","c29","c30","c31"],3:[]};
 
-const AUTH_KEY = "trip_planner_atl_auth_v4";
-const CACHE_PREFIX = "trip_planner_atl_cache_v4";
+const AUTH_KEY = "trip_planner_atl_auth_v5";
+const CACHE_PREFIX = "trip_planner_atl_cache_v5";
 function makeBrowserUid(){try{return `b-${crypto.randomUUID().slice(0,8)}`;}catch{return `b-${Math.random().toString(36).slice(2,10)}`;}}
 function loadAuth(){try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"{}");}catch{return {};} }
 function saveAuth(auth){try{localStorage.setItem(AUTH_KEY,JSON.stringify(auth));}catch{}}
+function clearAuth(){try{localStorage.removeItem(AUTH_KEY);}catch{}}
 function loadCache(uid){try{return JSON.parse(localStorage.getItem(`${CACHE_PREFIX}:${uid}`)||"null");}catch{return null;}}
 function saveCache(uid,state){try{localStorage.setItem(`${CACHE_PREFIX}:${uid}`,JSON.stringify(state));}catch{}}
+function defaultPlannerState(){return {selections:DAYS.map(()=>0),dayPins:INITIAL_PINS,food:INITIAL_FOOD,library:INITIAL_LIBRARY,conference:INITIAL_CONFERENCE,reminders:INITIAL_REMINDERS,dayItemOrder:{},hiddenActivities:{}}}
+const BASE_PATH = '/atlanta-trip';
+const socket = io({ path: BASE_PATH + '/socket.io' });
+function shareUrlForToken(token){return `${window.location.origin}${BASE_PATH}?share=${encodeURIComponent(token)}`}
 
 // ─── Shared Components ───
 function ThemeTag({theme}){const t=THEMES[theme];if(!t)return null;return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${t.bg} ${t.text} ${t.border} border`}>{t.icon} {t.label}</span>}
@@ -227,64 +233,82 @@ function Petals(){
   return <>{petals.map(p=><div key={p.id} className="petal" style={{left:`${p.left}%`,top:'100vh',animationDelay:`${p.delay}s`,animationDuration:`${p.dur}s`,fontSize:`${p.size}rem`,opacity:0.3}}>🍑</div>)}</>
 }
 
-function SessionBar({browserUid,passphrase,setPassphrase,joinUid,setJoinUid,joinPass,setJoinPass,syncStatus,onCopyUid,onJoin,onNewSession,onLockSession}){
+function SessionBar({sessionInfo,syncStatus,onShare,onNewSession}){
   return <div className="mb-5 bg-slate-800/70 rounded-2xl border border-slate-700/40 p-4 space-y-3">
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <div className="text-xs uppercase tracking-wide text-slate-500">Session</div>
-        <div className="flex items-center gap-2 mt-1 flex-wrap"><code className="px-2 py-1 rounded bg-slate-900/70 text-orange-300 text-xs border border-slate-700/60">{browserUid}</code><button onClick={onCopyUid} className="px-2 py-1 rounded bg-slate-700/70 text-slate-200 text-xs hover:bg-slate-600/70 transition-colors">Copy UID</button><span className="text-xs text-slate-500">{syncStatus}</span></div>
+        <div className="text-xs uppercase tracking-wide text-slate-500">Live plan</div>
+        {sessionInfo?<div className="mt-1 flex items-center gap-2 flex-wrap"><code className="px-2 py-1 rounded bg-slate-900/70 text-orange-300 text-xs border border-slate-700/60">{sessionInfo.uid||'loading shared plan…'}</code><span className="text-xs text-slate-500">{syncStatus}</span>{sessionInfo.mode==='shared'&&<span className="text-[10px] px-2 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300">shared link</span>}</div>:<div className="text-sm text-slate-400 mt-1">Choose a session to start planning.</div>}
       </div>
-      <button onClick={onNewSession} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 text-xs font-medium hover:bg-red-500/30 border border-red-500/30 transition-colors">New session</button>
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={onShare} disabled={!sessionInfo?.shareToken} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${sessionInfo?.shareToken?"bg-orange-500/20 text-orange-300 border-orange-500/30 hover:bg-orange-500/30":"bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed"}`}>Share your plan</button>
+        <button onClick={onNewSession} className="px-3 py-1.5 rounded-lg bg-slate-700/80 text-slate-200 text-xs font-medium hover:bg-slate-600/80 border border-slate-600/40 transition-colors">Create my own session</button>
+      </div>
     </div>
-    <div className="grid gap-2 md:grid-cols-3">
-      <input value={passphrase} onChange={e=>setPassphrase(e.target.value)} type="password" placeholder="Passphrase for this session" className="w-full bg-slate-900/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
-      <input value={joinUid} onChange={e=>setJoinUid(e.target.value)} placeholder="Join another session UID" className="w-full bg-slate-900/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
-      <input value={joinPass} onChange={e=>setJoinPass(e.target.value)} type="password" placeholder="Join passphrase" className="w-full bg-slate-900/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
+    {sessionInfo?.mode==='owner'&&<div className="text-[11px] text-slate-500">Recovery details saved in this browser. If you switch browsers later, use UID <span className="text-slate-300">{sessionInfo.uid}</span> and pass <span className="text-slate-300">{sessionInfo.passphrase}</span>.</div>}
+  </div>
+}
+
+function ShareModal({open,shareLink,onClose,onCopy}){
+  if(!open)return null;
+  return <div className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4">
+    <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-5">
+      <div className="flex items-start justify-between gap-3 mb-4"><div><h3 className="text-lg font-semibold text-white">Share your plan</h3><p className="text-sm text-slate-400 mt-1">Send this link manually. Anyone with the link can edit this shared planner.</p></div><button onClick={onClose} className="text-slate-500 hover:text-white">✕</button></div>
+      <div className="rounded-xl bg-slate-950/70 border border-slate-700 p-3 text-xs text-slate-300 break-all">{shareLink||'No share link yet.'}</div>
+      <div className="mt-4 flex gap-2 justify-end"><button onClick={onClose} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700">Close</button><button onClick={onCopy} className="px-3 py-2 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/30 text-sm hover:bg-orange-500/30">Copy link</button></div>
     </div>
-    <div className="flex flex-wrap gap-2">
-      <button onClick={onLockSession} className="px-3 py-1.5 rounded-lg bg-orange-500/20 text-orange-300 text-xs font-medium hover:bg-orange-500/30 border border-orange-500/30 transition-colors">Save / lock pass</button>
-      <button onClick={onJoin} className="px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 text-xs font-medium hover:bg-sky-500/30 border border-sky-500/30 transition-colors">Join session</button>
+  </div>
+}
+
+function SessionChooserModal({open,mode,setMode,joinUid,setJoinUid,joinPass,setJoinPass,onCreate,onLoad,onClose,lastCreated}){
+  if(!open)return null;
+  return <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4">
+    <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-5">
+      <div className="flex items-start justify-between gap-3 mb-4"><div><h3 className="text-xl font-semibold text-white">Start a planner session</h3><p className="text-sm text-slate-400 mt-1">Create a fresh shared plan or recover one you already saved.</p></div><button onClick={onClose} className="text-slate-500 hover:text-white">✕</button></div>
+      <div className="flex gap-2 mb-4"><button onClick={()=>setMode('create')} className={`px-3 py-2 rounded-lg text-sm border ${mode==='create'?"bg-orange-500/20 text-orange-300 border-orange-500/30":"bg-slate-800 text-slate-300 border-slate-700"}`}>Create new</button><button onClick={()=>setMode('load')} className={`px-3 py-2 rounded-lg text-sm border ${mode==='load'?"bg-orange-500/20 text-orange-300 border-orange-500/30":"bg-slate-800 text-slate-300 border-slate-700"}`}>Load existing</button></div>
+      {mode==='create'?<div className="space-y-4"><div className="rounded-xl bg-slate-950/60 border border-slate-800 p-4 text-sm text-slate-400">We’ll generate a session UID, a recovery pass, and a share link. Same browser will auto-return here later.</div><div className="flex justify-end"><button onClick={onCreate} className="px-4 py-2 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/30 text-sm hover:bg-orange-500/30">Create session</button></div>{lastCreated&&<div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4 space-y-2"><div className="text-sm font-medium text-emerald-300">Session created</div><div className="text-xs text-slate-300">UID: <code>{lastCreated.uid}</code></div><div className="text-xs text-slate-300">Pass: <code>{lastCreated.passphrase}</code></div><div className="text-xs text-slate-400">Keep these in case you reopen from another browser.</div></div>}</div>:<div className="space-y-3"><input value={joinUid} onChange={e=>setJoinUid(e.target.value)} placeholder="Saved session UID" className="w-full bg-slate-950/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-700 focus:border-orange-500 outline-none"/><input value={joinPass} onChange={e=>setJoinPass(e.target.value)} type="password" placeholder="Saved passphrase" className="w-full bg-slate-950/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-700 focus:border-orange-500 outline-none"/><div className="flex justify-end"><button onClick={onLoad} className="px-4 py-2 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 text-sm hover:bg-sky-500/30">Load session</button></div></div>}
     </div>
-    <p className="text-[11px] text-slate-500">Share the UID + passphrase with teammates. Same browser auto-loads; incognito/browser switches can join with the same UID and passphrase.</p>
   </div>
 }
 
 // ─── App ───
 function App(){
-  // Session model (kept intentionally simple):
-  // - each browser gets a UID stored in localStorage
-  // - same browser also stores the passphrase locally for auto-load convenience
-  // - server persistence only kicks in after a session is saved/locked with a passphrase
-  const authRef=useRef(loadAuth());
-  const initialBrowserUid=authRef.current.uid||makeBrowserUid();
-  const initialPass=authRef.current.passphrase||"";
-  const initialState=loadCache(initialBrowserUid)||null;
+  const params=new URLSearchParams(window.location.search);
+  const shareParam=params.get('share')||'';
+  const storedAuth=loadAuth();
+  const initialAuth=shareParam?{mode:'shared',shareToken:shareParam}:{...storedAuth};
+  const initialUid=initialAuth.uid||null;
+  const initialState=initialUid?loadCache(initialUid):null;
   const clientIdRef=useRef(Math.random().toString(36).slice(2));
 
   const [tab,setTab]=useState("itinerary");
-  const [browserUid,setBrowserUid]=useState(initialBrowserUid);
-  const [passphrase,setPassphrase]=useState(initialPass);
-  const [joinUid,setJoinUid]=useState("");
-  const [joinPass,setJoinPass]=useState("");
-  const [syncStatus,setSyncStatus]=useState('local only');
+  const [sessionInfo,setSessionInfo]=useState((initialAuth.uid||initialAuth.shareToken)?initialAuth:null);
+  const [syncStatus,setSyncStatus]=useState('waiting for session');
   const [sessionHydrated,setSessionHydrated]=useState(false);
+  const [showChooser,setShowChooser]=useState(false);
+  const [chooserMode,setChooserMode]=useState('create');
+  const [showShare,setShowShare]=useState(false);
+  const [joinUid,setJoinUid]=useState('');
+  const [joinPass,setJoinPass]=useState('');
+  const [lastCreated,setLastCreated]=useState(null);
 
-  // Core planner state always starts from local cache for fast, predictable load.
-  const [selections,setSelections]=useState(initialState?.selections||DAYS.map(()=>0));
-  const [dayPins,setDayPins]=useState(initialState?.dayPins||INITIAL_PINS);
-  const [food,setFood]=useState(initialState?.food||INITIAL_FOOD);
-  const [library,setLibrary]=useState(initialState?.library||INITIAL_LIBRARY);
-  const [conference,setConference]=useState(initialState?.conference||INITIAL_CONFERENCE);
-  const [reminders,setReminders]=useState(initialState?.reminders||INITIAL_REMINDERS);
+  // Planner data stays separate from auth metadata so we can seed a new session
+  // from the current UI state when someone wants to branch off into their own copy.
+  const seedState=initialState||defaultPlannerState();
+  const [selections,setSelections]=useState(seedState.selections);
+  const [dayPins,setDayPins]=useState(seedState.dayPins);
+  const [food,setFood]=useState(seedState.food);
+  const [library,setLibrary]=useState(seedState.library);
+  const [conference,setConference]=useState(seedState.conference);
+  const [reminders,setReminders]=useState(seedState.reminders);
   const [newReminder,setNewReminder]=useState("");
-  const [dayItemOrder,setDayItemOrder]=useState(initialState?.dayItemOrder||{});
-  const [hiddenActivities,setHiddenActivities]=useState(initialState?.hiddenActivities||{});
+  const [dayItemOrder,setDayItemOrder]=useState(seedState.dayItemOrder);
+  const [hiddenActivities,setHiddenActivities]=useState(seedState.hiddenActivities);
 
   function buildPlannerState(){
     return {selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities};
   }
 
-  // Centralized apply helper so loads and live updates all go through one path.
   function applyPlannerState(s){
     if(!s)return;
     if(s.selections)setSelections(s.selections);
@@ -297,53 +321,59 @@ function App(){
     if(s.hiddenActivities)setHiddenActivities(s.hiddenActivities);
   }
 
-  // Always keep this browser's current working copy cached locally.
+  const hasSession=Boolean(sessionInfo?.uid||sessionInfo?.shareToken);
+  const shareLink=sessionInfo?.shareToken?shareUrlForToken(sessionInfo.shareToken):'';
+
+  // Persist only owner credentials locally. Shared-link collaborators can always
+  // revisit by using the link again, and should not silently overwrite their own saved owner session.
   useEffect(()=>{
-    saveAuth({uid:browserUid,passphrase});
-  },[browserUid,passphrase]);
+    if(sessionInfo?.mode==='owner')saveAuth(sessionInfo);
+    else if(!shareParam)clearAuth();
+  },[sessionInfo,shareParam]);
 
   useEffect(()=>{
-    saveCache(browserUid,buildPlannerState());
-  },[browserUid,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+    if(sessionInfo?.uid)saveCache(sessionInfo.uid,buildPlannerState());
+  },[sessionInfo?.uid,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
 
-  // On startup / session switch, try to hydrate from the server if we have a passphrase.
+  // Hydrate either from a saved owner session or from a shared link.
   useEffect(()=>{
     let cancelled=false;
-    async function hydrateSession(){
-      setSessionHydrated(false);
-      const cached=loadCache(browserUid);
-      if(cached) applyPlannerState(cached);
-
-      if(!passphrase){
-        setSyncStatus('local only');
+    async function hydrate(){
+      if(!sessionInfo?.uid&&!sessionInfo?.shareToken){
         setSessionHydrated(true);
+        setSyncStatus('choose a session');
         return;
       }
-
-      setSyncStatus('loading session…');
+      setSessionHydrated(false);
+      const cached=sessionInfo.uid?loadCache(sessionInfo.uid):null;
+      if(cached)applyPlannerState(cached);
       try{
-        const params=new URLSearchParams({uid:browserUid,pass:passphrase});
-        const res=await fetch(BASE_PATH+`/api/session?${params.toString()}`);
+        let res;
+        if(sessionInfo.mode==='shared'){
+          res=await fetch(BASE_PATH+`/api/share/${encodeURIComponent(sessionInfo.shareToken)}`);
+        }else{
+          const q=new URLSearchParams({uid:sessionInfo.uid,pass:sessionInfo.passphrase});
+          res=await fetch(BASE_PATH+`/api/session?${q.toString()}`);
+        }
         const data=await res.json();
         if(cancelled)return;
-        if(res.ok&&data.session?.state){
-          applyPlannerState(data.session.state);
-          saveCache(browserUid,data.session.state);
-          setSyncStatus('connected');
-        }else if(res.ok){
-          setSyncStatus('ready to save');
-        }else{
-          setSyncStatus(data.error||'session load failed');
+        if(!res.ok)throw new Error(data.error||'Failed to load session');
+        applyPlannerState(data.session.state);
+        saveCache(data.session.uid,data.session.state);
+        setSessionInfo((prev)=>({...prev,...data.session}));
+        setSyncStatus(sessionInfo.mode==='shared'?'shared session ready':'session ready');
+      }catch(err){
+        if(!cancelled){
+          setSyncStatus(err.message||'session load failed');
+          if(!cached&&!shareParam) setShowChooser(true);
         }
-      }catch{
-        if(!cancelled)setSyncStatus('offline / local cache');
       }finally{
         if(!cancelled)setSessionHydrated(true);
       }
     }
-    hydrateSession();
+    hydrate();
     return()=>{cancelled=true};
-  },[browserUid,passphrase]);
+  },[sessionInfo?.uid,sessionInfo?.shareToken,sessionInfo?.passphrase,sessionInfo?.mode]);
 
   const pinToDay=(di,id)=>setDayPins(p=>{const n={...p};const e=[...(n[di]||[])];if(!e.includes(id))e.push(id);n[di]=e;return n});
   const removePin=(di,id)=>{setDayPins(p=>{const n={...p};n[di]=(n[di]||[]).filter(x=>x!==id);return n});setDayItemOrder(p=>{const n={...p};if(n[di])n[di]=n[di].filter(k=>k!==id);return n})};
@@ -387,144 +417,130 @@ function App(){
     setDayItemOrder(p=>({...p,[di]:newOrder}));
   };
 
-  // Join the Socket.IO room for the active planner session.
   useEffect(()=>{
-    if(!browserUid)return;
-    socket.emit('join-session',{uid:browserUid});
-  },[browserUid]);
+    if(sessionInfo?.uid)socket.emit('join-session',{uid:sessionInfo.uid});
+  },[sessionInfo?.uid]);
 
-  // Autosave only after the session has been hydrated and a passphrase exists.
-  // This avoids clobbering server state during first paint.
+  // Autosave any planner changes back to the current session.
   useEffect(()=>{
-    if(!sessionHydrated||!passphrase)return;
+    if(!sessionHydrated||!sessionInfo?.uid)return;
     const state=buildPlannerState();
     const timer=setTimeout(async()=>{
       try{
-        await fetch(BASE_PATH+'/api/session',{
+        const body=sessionInfo.mode==='shared'
+          ? {shareToken:sessionInfo.shareToken,state,clientId:clientIdRef.current}
+          : {uid:sessionInfo.uid,pass:sessionInfo.passphrase,state,clientId:clientIdRef.current};
+        const res=await fetch(BASE_PATH+'/api/session/save',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({uid:browserUid,pass:passphrase,state,clientId:clientIdRef.current})
+          body:JSON.stringify(body)
         });
-        setSyncStatus('connected');
-      }catch{
-        setSyncStatus('offline / local cache');
+        const data=await res.json();
+        if(!res.ok)throw new Error(data.error||'Save failed');
+        setSessionInfo((prev)=>({...prev,...data.session}));
+        setSyncStatus(sessionInfo.mode==='shared'?'saved to shared plan':'saved');
+      }catch(err){
+        setSyncStatus(err.message||'save failed');
       }
     },350);
     return()=>clearTimeout(timer);
-  },[sessionHydrated,browserUid,passphrase,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+  },[sessionHydrated,sessionInfo?.uid,sessionInfo?.shareToken,sessionInfo?.passphrase,sessionInfo?.mode,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
 
-  // Listen for remote edits from teammates using the same session UID.
   useEffect(()=>{
-    const onConnect=()=>setSyncStatus(passphrase?'connected':'local only');
-    const onDisconnect=()=>setSyncStatus('offline / local cache');
     const onUpdate=({uid,state,from})=>{
-      if(uid!==browserUid||from===clientIdRef.current||!state)return;
+      if(uid!==sessionInfo?.uid||from===clientIdRef.current||!state)return;
       applyPlannerState(state);
-      saveCache(browserUid,state);
+      saveCache(uid,state);
       setSyncStatus('updated from teammate');
     };
-    socket.on('connect',onConnect);
-    socket.on('disconnect',onDisconnect);
     socket.on('state-updated',onUpdate);
-    return()=>{
-      socket.off('connect',onConnect);
-      socket.off('disconnect',onDisconnect);
-      socket.off('state-updated',onUpdate);
-    };
-  },[browserUid,passphrase]);
+    return()=>socket.off('state-updated',onUpdate);
+  },[sessionInfo?.uid]);
 
-  async function lockCurrentSession(){
-    if(!passphrase.trim()){
-      alert('Add a passphrase first so this session can be re-opened and shared.');
-      return;
-    }
+  async function createSessionFromCurrentState(){
     try{
-      const state=buildPlannerState();
-      const res=await fetch(BASE_PATH+'/api/session',{
+      const res=await fetch(BASE_PATH+'/api/session/create',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({uid:browserUid,pass:passphrase,state,clientId:clientIdRef.current})
+        body:JSON.stringify({state:buildPlannerState()})
       });
       const data=await res.json();
-      if(!res.ok)throw new Error(data.error||'Failed to save session');
-      saveAuth({uid:browserUid,passphrase});
-      saveCache(browserUid,state);
-      setSyncStatus('saved + shareable');
-      alert(`Session saved. Share this UID: ${browserUid}`);
+      if(!res.ok)throw new Error(data.error||'Failed to create session');
+      const ownerSession={mode:'owner',...data.session};
+      setSessionInfo(ownerSession);
+      setLastCreated(data.session);
+      setShowChooser(true);
+      setChooserMode('create');
+      setShowShare(false);
+      saveCache(data.session.uid,data.session.state);
+      setSyncStatus('session created');
     }catch(err){
-      alert(err.message||'Failed to save session');
+      alert(err.message||'Failed to create session');
     }
   }
 
-  async function joinExistingSession(){
+  async function loadExistingSession(){
     const uid=joinUid.trim();
-    if(!uid||!joinPass.trim()){
-      alert('Enter the shared UID and passphrase.');
+    const pass=joinPass.trim();
+    if(!uid||!pass){
+      alert('Enter the saved UID and passphrase.');
       return;
     }
     try{
-      const params=new URLSearchParams({uid,pass:joinPass});
-      const res=await fetch(BASE_PATH+`/api/session?${params.toString()}`);
+      const q=new URLSearchParams({uid,pass});
+      const res=await fetch(BASE_PATH+`/api/session?${q.toString()}`);
       const data=await res.json();
-      if(!res.ok)throw new Error(data.error||'Failed to join session');
-      if(!data.session?.state)throw new Error('Session not found');
-      applyPlannerState(data.session.state);
+      if(!res.ok)throw new Error(data.error||'Failed to load session');
+      const ownerSession={mode:'owner',passphrase:pass,...data.session};
+      setSessionInfo(ownerSession);
+      setShowChooser(false);
+      setLastCreated(null);
       saveCache(uid,data.session.state);
-      setBrowserUid(uid);
-      setPassphrase(joinPass);
-      setJoinUid('');
-      setJoinPass('');
-      setSyncStatus('connected');
+      applyPlannerState(data.session.state);
+      setSyncStatus('session loaded');
     }catch(err){
-      alert(err.message||'Failed to join session');
+      alert(err.message||'Failed to load session');
     }
   }
 
-  async function copyUid(){
-    try{
-      await navigator.clipboard.writeText(browserUid);
-      setSyncStatus('uid copied');
-    }catch{
-      alert(`Copy this UID manually: ${browserUid}`);
-    }
+  async function copyShareLink(){
+    if(!shareLink)return;
+    try{await navigator.clipboard.writeText(shareLink);setSyncStatus('share link copied');}
+    catch{alert(shareLink)}
   }
 
-  function startFreshSession(){
-    const uid=makeBrowserUid();
-    setBrowserUid(uid);
-    setPassphrase('');
-    setJoinUid('');
-    setJoinPass('');
-    setSyncStatus('local only');
-    const cached=loadCache(uid);
-    if(cached)applyPlannerState(cached);
-    else applyPlannerState({selections:DAYS.map(()=>0),dayPins:INITIAL_PINS,food:INITIAL_FOOD,library:INITIAL_LIBRARY,conference:INITIAL_CONFERENCE,reminders:INITIAL_REMINDERS,dayItemOrder:{},hiddenActivities:{}});
+  function startIndependentSession(){
+    setChooserMode('create');
+    setLastCreated(null);
+    setShowChooser(true);
   }
 
-  return <div className="min-h-screen bg-[#0c0c1a] text-white relative">
+  // First-action gate: only non-returning users see the chooser, and only once they try to interact.
+  function handleInteractionGate(e){
+    if(hasSession||showChooser)return;
+    const interactive=e.target.closest('button,input,textarea,select,a,label');
+    if(!interactive)return;
+    e.preventDefault();
+    e.stopPropagation();
+    setChooserMode('create');
+    setShowChooser(true);
+  }
+
+  return <div className="min-h-screen bg-[#0c0c1a] text-white relative" onClickCapture={handleInteractionGate}>
     <Petals/>
+    <ShareModal open={showShare} shareLink={shareLink} onClose={()=>setShowShare(false)} onCopy={copyShareLink}/>
+    <SessionChooserModal open={showChooser} mode={chooserMode} setMode={setChooserMode} joinUid={joinUid} setJoinUid={setJoinUid} joinPass={joinPass} setJoinPass={setJoinPass} onCreate={createSessionFromCurrentState} onLoad={loadExistingSession} onClose={()=>setShowChooser(false)} lastCreated={lastCreated}/>
     <div className="max-w-3xl mx-auto px-4 py-8 relative z-10">
       <div className="text-center mb-6">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-400 via-amber-300 to-red-400 bg-clip-text text-transparent">🍑 Atlanta Getaway</h1>
-        <p className="text-slate-400 mt-1">4 days · Canopy by Hilton Midtown · UX360 Summit</p>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-400 via-amber-300 to-red-400 bg-clip-text text-transparent">UX360 Summit</h1>
+        <p className="text-slate-400 mt-1">Atlanta conference planner · shared trip planning</p>
         <p className="text-sm text-slate-500 mt-1">Apr 21 – Apr 24, 2026</p>
         <p className="text-xs text-slate-500 mt-2">🏨 Canopy by Hilton Atlanta Midtown · ✈️ Arrive Tue 7:20pm · Depart Fri 8:35pm</p>
       </div>
 
-      <SessionBar
-        browserUid={browserUid}
-        passphrase={passphrase}
-        setPassphrase={setPassphrase}
-        joinUid={joinUid}
-        setJoinUid={setJoinUid}
-        joinPass={joinPass}
-        setJoinPass={setJoinPass}
-        syncStatus={syncStatus}
-        onCopyUid={copyUid}
-        onJoin={joinExistingSession}
-        onNewSession={startFreshSession}
-        onLockSession={lockCurrentSession}
-      />
+      <SessionBar sessionInfo={sessionInfo} syncStatus={syncStatus} onShare={()=>setShowShare(true)} onNewSession={startIndependentSession}/>
+
+      {!hasSession&&<div className="mb-4 rounded-xl bg-sky-500/10 border border-sky-500/20 px-4 py-3 text-sm text-sky-200">Tap any control to create or load a session first.</div>}
 
       <div className="flex gap-1 mb-6 bg-slate-800/60 rounded-xl p-1 border border-slate-700/40">
         {[{id:"itinerary",label:"Itinerary",icon:"📍"},{id:"library",label:"Activities",icon:"🥾",count:library.length},{id:"food",label:"Food Guide",icon:"🍗",count:food.length},{id:"conference",label:"Conference",icon:"🎤",count:conference.length}].map(t=>

@@ -4,50 +4,60 @@
 Add lightweight session auth/sharing so the planner is no longer one global shared state.
 
 ## User requirements
-- First visit gets a browser UID.
-- Same browser should auto-load its session.
-- User can save/protect a session with a passphrase.
-- Incognito/new browser can load a session with UID + passphrase.
-- Session can be shared so multiple people edit the same planner.
+- First visit gets a popup on first meaningful interaction asking to create or load a session.
+- Returning users should auto-load without the popup.
+- New session should show a UID + recovery pass.
+- Same browser should auto-return to the saved owner session.
+- Share action should open a modal with a copyable link.
+- Anyone with the shared link can collaborate without a pass.
+- Shared-link users can branch off and create their own separate session.
+- Page title/header should use `UX360 Summit`.
 - Keep it simple and pragmatic for ~100 users during a conference week.
 
 ## Progress log
 - Initialized git repo.
 - Created initial snapshot commit: `5c0342d` (`chore: initial snapshot`).
-- Inspected current app structure: one HTML app + one small Express/Socket.IO/SQLite server.
-- Reworked `server.js` toward per-session storage instead of one global `main` state.
-- Added `package.json` and `.gitignore`.
-- Added frontend session scaffolding in `atlanta-trip-planner.html`:
-  - auth/cache helpers
-  - `SessionBar` UI
-  - `App()` refactor for browser UID, passphrase, local cache, hydrate, autosave, join flow, and live socket sync
-- Added inline comments in the session code paths to make follow-up changes easier.
-- Saved checkpoint commit: `a540fed` (`feat: scaffold lightweight shared sessions`).
-- Dependency install hit a version issue: `better-sqlite3@^11.11.0` does not exist.
-- Updated `package.json` to use `better-sqlite3@^12.9.0`.
-- Installed dependencies successfully.
-- Verified `server.js` syntax with `node --check server.js`.
-- Started the app locally with `npm start`.
-- Verified backend session API behavior:
-  - create session with passphrase
-  - load session with correct passphrase
-  - reject wrong passphrase with 401
-  - update existing locked session
-- Updated `.gitignore` to ignore SQLite WAL/SHM files.
+- Added first shared-session scaffold commit: `a540fed` (`feat: scaffold lightweight shared sessions`).
+- Added verification/dependency commit: `c924a11` (`chore: verify session auth setup`).
+- Reworked server storage model again to better match the desired UX:
+  - owner UID + passphrase recovery
+  - separate share token + share URL for collaborator access without passphrase
+  - create/load/share/save endpoints aligned to that flow
+- Reworked frontend session UX in `atlanta-trip-planner.html`:
+  - first-interaction session chooser modal
+  - owner recovery flow
+  - share modal with copyable link
+  - shared-link auto-load flow
+  - “create my own session” branch-off flow
+  - title/header renamed to `UX360 Summit`
+- Added/kept inline comments around session logic to make follow-up debugging easier.
+- Installed `playwright-core` as a dev dependency for real local browser verification.
 
-## What should work now
-- Browser UID is persisted locally.
-- Passphrase is persisted locally for same-browser auto-load convenience.
-- Session save/join UI is present in the planner.
-- Backend supports per-session GET/POST plus socket room broadcast.
-- Local server is able to persist/read locked planner sessions.
+## Verification completed
+- `node --check server.js` passes.
+- Local app server starts successfully with `npm start`.
+- Verified backend APIs for create/load/save behavior earlier in the session.
+- Verified the updated browser flow with a real Playwright + Brave run against localhost:
+  1. Fresh user clicks a control.
+  2. Session chooser modal opens.
+  3. User creates a session and sees UID + pass.
+  4. Share modal exposes a share link.
+  5. Second browser opens share link without pass.
+  6. Second browser edits planner and first browser receives the update.
+  7. Shared-link user creates their own session.
+  8. New edits stay isolated from the original shared session.
 
-## Remaining work / risk
-1. Browser-level QA of the new UI flow is still needed.
-2. Because browser automation cannot access the private localhost URL from this environment, frontend verification has been indirect (code review + backend API tests), not full end-to-end browser validation.
-3. If any UI bug shows up, likely areas are `App()` hydration order or same-page session switching.
+## Current state
+- Main session/sharing flow is working locally.
+- Local server process was started during testing and may still be running.
+- `playwright-core` was added to `package.json` for future localhost QA.
+
+## Remaining polish ideas
+- Reduce the number of autosave calls during initial shared-session hydration.
+- Improve the visual formatting of UID/pass display in the create-session success block.
+- If desired later, add a dedicated “Done” button to the session chooser after creation.
 
 ## Notes
 - This is intentionally lightweight, not secure production auth.
-- Local passphrase storage is a deliberate convenience tradeoff for this short-lived conference app.
-- Active local server process was started during verification and may still be running.
+- Local passphrase storage is a convenience tradeoff for this short-lived conference app.
+- Shared-link collaborators do not need the passphrase; the pass is only for owner recovery from a different browser/incognito.
