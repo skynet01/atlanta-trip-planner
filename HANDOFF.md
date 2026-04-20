@@ -20,22 +20,34 @@ Add lightweight session auth/sharing so the planner is no longer one global shar
 - Added frontend session scaffolding in `atlanta-trip-planner.html`:
   - auth/cache helpers
   - `SessionBar` UI
-  - `App()` refactor started for browser UID, passphrase, local cache, hydrate, autosave, join flow, and live socket sync
+  - `App()` refactor for browser UID, passphrase, local cache, hydrate, autosave, join flow, and live socket sync
 - Added inline comments in the session code paths to make follow-up changes easier.
+- Saved checkpoint commit: `a540fed` (`feat: scaffold lightweight shared sessions`).
+- Dependency install hit a version issue: `better-sqlite3@^11.11.0` does not exist.
+- Updated `package.json` to use `better-sqlite3@^12.9.0`.
+- Installed dependencies successfully.
+- Verified `server.js` syntax with `node --check server.js`.
+- Started the app locally with `npm start`.
+- Verified backend session API behavior:
+  - create session with passphrase
+  - load session with correct passphrase
+  - reject wrong passphrase with 401
+  - update existing locked session
+- Updated `.gitignore` to ignore SQLite WAL/SHM files.
 
-## What should work conceptually now
+## What should work now
 - Browser UID is persisted locally.
 - Passphrase is persisted locally for same-browser auto-load convenience.
 - Session save/join UI is present in the planner.
-- Backend contract now supports per-session GET/POST plus socket room broadcast.
+- Backend supports per-session GET/POST plus socket room broadcast.
+- Local server is able to persist/read locked planner sessions.
 
-## Remaining work
-1. Install npm dependencies.
-2. Run syntax/runtime verification.
-3. Fix any frontend bugs from the `App()` refactor.
-4. Verify two-session shared editing behavior in browser.
-5. Commit checkpoint once app is running.
+## Remaining work / risk
+1. Browser-level QA of the new UI flow is still needed.
+2. Because browser automation cannot access the private localhost URL from this environment, frontend verification has been indirect (code review + backend API tests), not full end-to-end browser validation.
+3. If any UI bug shows up, likely areas are `App()` hydration order or same-page session switching.
 
 ## Notes
 - This is intentionally lightweight, not secure production auth.
 - Local passphrase storage is a deliberate convenience tradeoff for this short-lived conference app.
+- Active local server process was started during verification and may still be running.

@@ -1,4 +1,6 @@
 node_modules/
 trip-planner.db
+trip-planner.db-shm
+trip-planner.db-wal
 *.log
 .DS_Store
