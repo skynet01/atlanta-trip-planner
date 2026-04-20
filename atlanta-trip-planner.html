@@ -19,7 +19,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const THEMES = {
   food:{label:"Food",text:"text-orange-400",bg:"bg-orange-500/10",border:"border-orange-500/30",icon:"🍗"},
@@ -196,9 +196,13 @@ const INITIAL_REMINDERS = [
 // ~60% of conference events pre-pinned (interestScore >= 6)
 const INITIAL_PINS = {0:["c1"],1:["c2","c5","c6","c9","c11","c13","c15","c16","c17"],2:["c18","c19","c20","c25","c26","c28","c29","c30","c31"],3:[]};
 
-const STORAGE_KEY = "trip_planner_atl_v3";
-function load(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY))}catch{return null}}
-function save(s){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(s))}catch{}}
+const AUTH_KEY = "trip_planner_atl_auth_v4";
+const CACHE_PREFIX = "trip_planner_atl_cache_v4";
+function makeBrowserUid(){try{return `b-${crypto.randomUUID().slice(0,8)}`;}catch{return `b-${Math.random().toString(36).slice(2,10)}`;}}
+function loadAuth(){try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"{}");}catch{return {};} }
+function saveAuth(auth){try{localStorage.setItem(AUTH_KEY,JSON.stringify(auth));}catch{}}
+function loadCache(uid){try{return JSON.parse(localStorage.getItem(`${CACHE_PREFIX}:${uid}`)||"null");}catch{return null;}}
+function saveCache(uid,state){try{localStorage.setItem(`${CACHE_PREFIX}:${uid}`,JSON.stringify(state));}catch{}}
 
 // ─── Shared Components ───
 function ThemeTag({theme}){const t=THEMES[theme];if(!t)return null;return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${t.bg} ${t.text} ${t.border} border`}>{t.icon} {t.label}</span>}
@@ -223,21 +227,123 @@ function Petals(){
   return <>{petals.map(p=><div key={p.id} className="petal" style={{left:`${p.left}%`,top:'100vh',animationDelay:`${p.delay}s`,animationDuration:`${p.dur}s`,fontSize:`${p.size}rem`,opacity:0.3}}>🍑</div>)}</>
 }
 
+function SessionBar({browserUid,passphrase,setPassphrase,joinUid,setJoinUid,joinPass,setJoinPass,syncStatus,onCopyUid,onJoin,onNewSession,onLockSession}){
+  return <div className="mb-5 bg-slate-800/70 rounded-2xl border border-slate-700/40 p-4 space-y-3">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div>
+        <div className="text-xs uppercase tracking-wide text-slate-500">Session</div>
+        <div className="flex items-center gap-2 mt-1 flex-wrap"><code className="px-2 py-1 rounded bg-slate-900/70 text-orange-300 text-xs border border-slate-700/60">{browserUid}</code><button onClick={onCopyUid} className="px-2 py-1 rounded bg-slate-700/70 text-slate-200 text-xs hover:bg-slate-600/70 transition-colors">Copy UID</button><span className="text-xs text-slate-500">{syncStatus}</span></div>
+      </div>
+      <button onClick={onNewSession} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 text-xs font-medium hover:bg-red-500/30 border border-red-500/30 transition-colors">New session</button>
+    </div>
+    <div className="grid gap-2 md:grid-cols-3">
+      <input value={passphrase} onChange={e=>setPassphrase(e.target.value)} type="password" placeholder="Passphrase for this session" className="w-full bg-slate-900/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
+      <input value={joinUid} onChange={e=>setJoinUid(e.target.value)} placeholder="Join another session UID" className="w-full bg-slate-900/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
+      <input value={joinPass} onChange={e=>setJoinPass(e.target.value)} type="password" placeholder="Join passphrase" className="w-full bg-slate-900/70 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
+    </div>
+    <div className="flex flex-wrap gap-2">
+      <button onClick={onLockSession} className="px-3 py-1.5 rounded-lg bg-orange-500/20 text-orange-300 text-xs font-medium hover:bg-orange-500/30 border border-orange-500/30 transition-colors">Save / lock pass</button>
+      <button onClick={onJoin} className="px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 text-xs font-medium hover:bg-sky-500/30 border border-sky-500/30 transition-colors">Join session</button>
+    </div>
+    <p className="text-[11px] text-slate-500">Share the UID + passphrase with teammates. Same browser auto-loads; incognito/browser switches can join with the same UID and passphrase.</p>
+  </div>
+}
+
 // ─── App ───
 function App(){
-  const saved=load();
-  const [tab,setTab]=useState("itinerary");
-  const [selections,setSelections]=useState(saved?.selections||DAYS.map(()=>0));
-  const [dayPins,setDayPins]=useState(saved?.dayPins||INITIAL_PINS);
-  const [food,setFood]=useState(saved?.food||INITIAL_FOOD);
-  const [library,setLibrary]=useState(saved?.library||INITIAL_LIBRARY);
-  const [conference,setConference]=useState(saved?.conference||INITIAL_CONFERENCE);
-  const [reminders,setReminders]=useState(saved?.reminders||INITIAL_REMINDERS);
-  const [newReminder,setNewReminder]=useState("");
-  const [dayItemOrder,setDayItemOrder]=useState(saved?.dayItemOrder||{});
-  const [hiddenActivities,setHiddenActivities]=useState(saved?.hiddenActivities||{});
+  // Session model (kept intentionally simple):
+  // - each browser gets a UID stored in localStorage
+  // - same browser also stores the passphrase locally for auto-load convenience
+  // - server persistence only kicks in after a session is saved/locked with a passphrase
+  const authRef=useRef(loadAuth());
+  const initialBrowserUid=authRef.current.uid||makeBrowserUid();
+  const initialPass=authRef.current.passphrase||"";
+  const initialState=loadCache(initialBrowserUid)||null;
+  const clientIdRef=useRef(Math.random().toString(36).slice(2));
 
-  useEffect(()=>{save({selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities})},[selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+  const [tab,setTab]=useState("itinerary");
+  const [browserUid,setBrowserUid]=useState(initialBrowserUid);
+  const [passphrase,setPassphrase]=useState(initialPass);
+  const [joinUid,setJoinUid]=useState("");
+  const [joinPass,setJoinPass]=useState("");
+  const [syncStatus,setSyncStatus]=useState('local only');
+  const [sessionHydrated,setSessionHydrated]=useState(false);
+
+  // Core planner state always starts from local cache for fast, predictable load.
+  const [selections,setSelections]=useState(initialState?.selections||DAYS.map(()=>0));
+  const [dayPins,setDayPins]=useState(initialState?.dayPins||INITIAL_PINS);
+  const [food,setFood]=useState(initialState?.food||INITIAL_FOOD);
+  const [library,setLibrary]=useState(initialState?.library||INITIAL_LIBRARY);
+  const [conference,setConference]=useState(initialState?.conference||INITIAL_CONFERENCE);
+  const [reminders,setReminders]=useState(initialState?.reminders||INITIAL_REMINDERS);
+  const [newReminder,setNewReminder]=useState("");
+  const [dayItemOrder,setDayItemOrder]=useState(initialState?.dayItemOrder||{});
+  const [hiddenActivities,setHiddenActivities]=useState(initialState?.hiddenActivities||{});
+
+  function buildPlannerState(){
+    return {selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities};
+  }
+
+  // Centralized apply helper so loads and live updates all go through one path.
+  function applyPlannerState(s){
+    if(!s)return;
+    if(s.selections)setSelections(s.selections);
+    if(s.dayPins)setDayPins(s.dayPins);
+    if(s.food)setFood(s.food);
+    if(s.library)setLibrary(s.library);
+    if(s.conference)setConference(s.conference);
+    if(s.reminders)setReminders(s.reminders);
+    if(s.dayItemOrder)setDayItemOrder(s.dayItemOrder);
+    if(s.hiddenActivities)setHiddenActivities(s.hiddenActivities);
+  }
+
+  // Always keep this browser's current working copy cached locally.
+  useEffect(()=>{
+    saveAuth({uid:browserUid,passphrase});
+  },[browserUid,passphrase]);
+
+  useEffect(()=>{
+    saveCache(browserUid,buildPlannerState());
+  },[browserUid,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+
+  // On startup / session switch, try to hydrate from the server if we have a passphrase.
+  useEffect(()=>{
+    let cancelled=false;
+    async function hydrateSession(){
+      setSessionHydrated(false);
+      const cached=loadCache(browserUid);
+      if(cached) applyPlannerState(cached);
+
+      if(!passphrase){
+        setSyncStatus('local only');
+        setSessionHydrated(true);
+        return;
+      }
+
+      setSyncStatus('loading session…');
+      try{
+        const params=new URLSearchParams({uid:browserUid,pass:passphrase});
+        const res=await fetch(BASE_PATH+`/api/session?${params.toString()}`);
+        const data=await res.json();
+        if(cancelled)return;
+        if(res.ok&&data.session?.state){
+          applyPlannerState(data.session.state);
+          saveCache(browserUid,data.session.state);
+          setSyncStatus('connected');
+        }else if(res.ok){
+          setSyncStatus('ready to save');
+        }else{
+          setSyncStatus(data.error||'session load failed');
+        }
+      }catch{
+        if(!cancelled)setSyncStatus('offline / local cache');
+      }finally{
+        if(!cancelled)setSessionHydrated(true);
+      }
+    }
+    hydrateSession();
+    return()=>{cancelled=true};
+  },[browserUid,passphrase]);
 
   const pinToDay=(di,id)=>setDayPins(p=>{const n={...p};const e=[...(n[di]||[])];if(!e.includes(id))e.push(id);n[di]=e;return n});
   const removePin=(di,id)=>{setDayPins(p=>{const n={...p};n[di]=(n[di]||[]).filter(x=>x!==id);return n});setDayItemOrder(p=>{const n={...p};if(n[di])n[di]=n[di].filter(k=>k!==id);return n})};
@@ -281,6 +387,120 @@ function App(){
     setDayItemOrder(p=>({...p,[di]:newOrder}));
   };
 
+  // Join the Socket.IO room for the active planner session.
+  useEffect(()=>{
+    if(!browserUid)return;
+    socket.emit('join-session',{uid:browserUid});
+  },[browserUid]);
+
+  // Autosave only after the session has been hydrated and a passphrase exists.
+  // This avoids clobbering server state during first paint.
+  useEffect(()=>{
+    if(!sessionHydrated||!passphrase)return;
+    const state=buildPlannerState();
+    const timer=setTimeout(async()=>{
+      try{
+        await fetch(BASE_PATH+'/api/session',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({uid:browserUid,pass:passphrase,state,clientId:clientIdRef.current})
+        });
+        setSyncStatus('connected');
+      }catch{
+        setSyncStatus('offline / local cache');
+      }
+    },350);
+    return()=>clearTimeout(timer);
+  },[sessionHydrated,browserUid,passphrase,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+
+  // Listen for remote edits from teammates using the same session UID.
+  useEffect(()=>{
+    const onConnect=()=>setSyncStatus(passphrase?'connected':'local only');
+    const onDisconnect=()=>setSyncStatus('offline / local cache');
+    const onUpdate=({uid,state,from})=>{
+      if(uid!==browserUid||from===clientIdRef.current||!state)return;
+      applyPlannerState(state);
+      saveCache(browserUid,state);
+      setSyncStatus('updated from teammate');
+    };
+    socket.on('connect',onConnect);
+    socket.on('disconnect',onDisconnect);
+    socket.on('state-updated',onUpdate);
+    return()=>{
+      socket.off('connect',onConnect);
+      socket.off('disconnect',onDisconnect);
+      socket.off('state-updated',onUpdate);
+    };
+  },[browserUid,passphrase]);
+
+  async function lockCurrentSession(){
+    if(!passphrase.trim()){
+      alert('Add a passphrase first so this session can be re-opened and shared.');
+      return;
+    }
+    try{
+      const state=buildPlannerState();
+      const res=await fetch(BASE_PATH+'/api/session',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({uid:browserUid,pass:passphrase,state,clientId:clientIdRef.current})
+      });
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error||'Failed to save session');
+      saveAuth({uid:browserUid,passphrase});
+      saveCache(browserUid,state);
+      setSyncStatus('saved + shareable');
+      alert(`Session saved. Share this UID: ${browserUid}`);
+    }catch(err){
+      alert(err.message||'Failed to save session');
+    }
+  }
+
+  async function joinExistingSession(){
+    const uid=joinUid.trim();
+    if(!uid||!joinPass.trim()){
+      alert('Enter the shared UID and passphrase.');
+      return;
+    }
+    try{
+      const params=new URLSearchParams({uid,pass:joinPass});
+      const res=await fetch(BASE_PATH+`/api/session?${params.toString()}`);
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error||'Failed to join session');
+      if(!data.session?.state)throw new Error('Session not found');
+      applyPlannerState(data.session.state);
+      saveCache(uid,data.session.state);
+      setBrowserUid(uid);
+      setPassphrase(joinPass);
+      setJoinUid('');
+      setJoinPass('');
+      setSyncStatus('connected');
+    }catch(err){
+      alert(err.message||'Failed to join session');
+    }
+  }
+
+  async function copyUid(){
+    try{
+      await navigator.clipboard.writeText(browserUid);
+      setSyncStatus('uid copied');
+    }catch{
+      alert(`Copy this UID manually: ${browserUid}`);
+    }
+  }
+
+  function startFreshSession(){
+    const uid=makeBrowserUid();
+    setBrowserUid(uid);
+    setPassphrase('');
+    setJoinUid('');
+    setJoinPass('');
+    setSyncStatus('local only');
+    const cached=loadCache(uid);
+    if(cached)applyPlannerState(cached);
+    else applyPlannerState({selections:DAYS.map(()=>0),dayPins:INITIAL_PINS,food:INITIAL_FOOD,library:INITIAL_LIBRARY,conference:INITIAL_CONFERENCE,reminders:INITIAL_REMINDERS,dayItemOrder:{},hiddenActivities:{}});
+  }
+
   return <div className="min-h-screen bg-[#0c0c1a] text-white relative">
     <Petals/>
     <div className="max-w-3xl mx-auto px-4 py-8 relative z-10">
@@ -290,6 +510,21 @@ function App(){
         <p className="text-sm text-slate-500 mt-1">Apr 21 – Apr 24, 2026</p>
         <p className="text-xs text-slate-500 mt-2">🏨 Canopy by Hilton Atlanta Midtown · ✈️ Arrive Tue 7:20pm · Depart Fri 8:35pm</p>
       </div>
+
+      <SessionBar
+        browserUid={browserUid}
+        passphrase={passphrase}
+        setPassphrase={setPassphrase}
+        joinUid={joinUid}
+        setJoinUid={setJoinUid}
+        joinPass={joinPass}
+        setJoinPass={setJoinPass}
+        syncStatus={syncStatus}
+        onCopyUid={copyUid}
+        onJoin={joinExistingSession}
+        onNewSession={startFreshSession}
+        onLockSession={lockCurrentSession}
+      />
 
       <div className="flex gap-1 mb-6 bg-slate-800/60 rounded-xl p-1 border border-slate-700/40">
         {[{id:"itinerary",label:"Itinerary",icon:"📍"},{id:"library",label:"Activities",icon:"🥾",count:library.length},{id:"food",label:"Food Guide",icon:"🍗",count:food.length},{id:"conference",label:"Conference",icon:"🎤",count:conference.length}].map(t=>

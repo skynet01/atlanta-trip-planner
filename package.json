@@ -1,0 +1,15 @@
+{
+  "name": "atlanta-trip-planner",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Atlanta trip planner with lightweight session sharing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.11.0",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
