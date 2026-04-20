@@ -205,7 +205,7 @@ function saveAuth(auth){try{localStorage.setItem(AUTH_KEY,JSON.stringify(auth));
 function clearAuth(){try{localStorage.removeItem(AUTH_KEY);}catch{}}
 function loadCache(uid){try{return JSON.parse(localStorage.getItem(`${CACHE_PREFIX}:${uid}`)||"null");}catch{return null;}}
 function saveCache(uid,state){try{localStorage.setItem(`${CACHE_PREFIX}:${uid}`,JSON.stringify(state));}catch{}}
-function defaultPlannerState(){return {selections:DAYS.map(()=>0),dayPins:INITIAL_PINS,food:INITIAL_FOOD,library:INITIAL_LIBRARY,conference:INITIAL_CONFERENCE,reminders:INITIAL_REMINDERS,dayItemOrder:{},hiddenActivities:{}}}
+function defaultPlannerState(){return {selections:DAYS.map(()=>0),dayPins:INITIAL_PINS,food:INITIAL_FOOD,library:INITIAL_LIBRARY,conference:INITIAL_CONFERENCE,reminders:INITIAL_REMINDERS,dayItemOrder:{},hiddenActivities:{},pinTimes:{}}}
 const BASE_PATH = '/atlanta-trip';
 const socket = io({ path: BASE_PATH + '/socket.io' });
 function shareUrlForToken(token){return `${window.location.origin}${BASE_PATH}?share=${encodeURIComponent(token)}`}
@@ -304,9 +304,10 @@ function App(){
   const [newReminder,setNewReminder]=useState("");
   const [dayItemOrder,setDayItemOrder]=useState(seedState.dayItemOrder);
   const [hiddenActivities,setHiddenActivities]=useState(seedState.hiddenActivities);
+  const [pinTimes,setPinTimes]=useState(seedState.pinTimes||{});
 
   function buildPlannerState(){
-    return {selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities};
+    return {selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities,pinTimes};
   }
 
   function applyPlannerState(s){
@@ -319,6 +320,7 @@ function App(){
     if(s.reminders)setReminders(s.reminders);
     if(s.dayItemOrder)setDayItemOrder(s.dayItemOrder);
     if(s.hiddenActivities)setHiddenActivities(s.hiddenActivities);
+    if(s.pinTimes)setPinTimes(s.pinTimes);
   }
 
   const hasSession=Boolean(sessionInfo?.uid||sessionInfo?.shareToken);
@@ -333,7 +335,7 @@ function App(){
 
   useEffect(()=>{
     if(sessionInfo?.uid)saveCache(sessionInfo.uid,buildPlannerState());
-  },[sessionInfo?.uid,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+  },[sessionInfo?.uid,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities,pinTimes]);
 
   // Hydrate either from a saved owner session or from a shared link.
   useEffect(()=>{
@@ -376,7 +378,8 @@ function App(){
   },[sessionInfo?.uid,sessionInfo?.shareToken,sessionInfo?.passphrase,sessionInfo?.mode]);
 
   const pinToDay=(di,id)=>setDayPins(p=>{const n={...p};const e=[...(n[di]||[])];if(!e.includes(id))e.push(id);n[di]=e;return n});
-  const removePin=(di,id)=>{setDayPins(p=>{const n={...p};n[di]=(n[di]||[]).filter(x=>x!==id);return n});setDayItemOrder(p=>{const n={...p};if(n[di])n[di]=n[di].filter(k=>k!==id);return n})};
+  const removePin=(di,id)=>{setDayPins(p=>{const n={...p};n[di]=(n[di]||[]).filter(x=>x!==id);return n});setDayItemOrder(p=>{const n={...p};if(n[di])n[di]=n[di].filter(k=>k!==id);return n});setPinTimes(p=>{const n={...p};if(n[di]){const d={...n[di]};delete d[id];if(Object.keys(d).length)n[di]=d;else delete n[di]}return n})};
+  const setPinTime=(di,id,time)=>setPinTimes(p=>{const n={...p};const d={...(n[di]||{})};if(time)d[id]=time;else delete d[id];if(Object.keys(d).length)n[di]=d;else delete n[di];return n});
   const totalPins=Object.values(dayPins).reduce((s,a)=>s+a.length,0);
 
   const allItems=useMemo(()=>{const m={};[...food,...library,...conference].forEach(x=>{m[x.id]=x});return m},[food,library,conference]);
@@ -396,9 +399,15 @@ function App(){
     const order=[...valid,...remaining];
     const itemMap={};
     opt.activities.forEach((a,idx)=>{itemMap['act-'+idx]={type:'act',key:'act-'+idx,...a}});
-    pinIds.forEach(id=>{const p=allItems[id];if(p)itemMap[id]={type:'pin',key:id,...p}});
+    pinIds.forEach(id=>{
+      const p=allItems[id];
+      if(!p)return;
+      const isConf=p.themes?.includes("conference");
+      const custom=!isConf?(pinTimes[di]?.[id]||null):null;
+      itemMap[id]={type:'pin',key:id,...p,time:custom||p.time,customTime:custom};
+    });
     return order.map(k=>itemMap[k]).filter(Boolean);
-  },[selections,dayPins,allItems,dayItemOrder,hiddenActivities]);
+  },[selections,dayPins,allItems,dayItemOrder,hiddenActivities,pinTimes]);
 
   const getHiddenItems=useCallback((di)=>{
     const opt=DAYS[di].options[selections[di]]||DAYS[di].options[0];
@@ -444,7 +453,7 @@ function App(){
       }
     },350);
     return()=>clearTimeout(timer);
-  },[sessionHydrated,sessionInfo?.uid,sessionInfo?.shareToken,sessionInfo?.passphrase,sessionInfo?.mode,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities]);
+  },[sessionHydrated,sessionInfo?.uid,sessionInfo?.shareToken,sessionInfo?.passphrase,sessionInfo?.mode,selections,dayPins,food,library,conference,reminders,dayItemOrder,hiddenActivities,pinTimes]);
 
   useEffect(()=>{
     const onUpdate=({uid,state,from})=>{
@@ -550,7 +559,7 @@ function App(){
 
       {totalPins>0&&tab!=="itinerary"&&<div className="mb-4 bg-orange-500/10 rounded-lg px-4 py-2 border border-orange-500/20 text-xs text-orange-300">📌 {totalPins} item{totalPins!==1?"s":""} pinned. Switch to Itinerary to see them on each day.</div>}
 
-      {tab==="itinerary"&&<ItineraryTab selections={selections} setSelections={setSelections} dayPins={dayPins} removePin={removePin} allItems={allItems} getDayDisplayItems={getDayDisplayItems} moveItem={moveItem} hideActivity={hideActivity} restoreActivity={restoreActivity} getHiddenItems={getHiddenItems} reminders={reminders} setReminders={setReminders} newReminder={newReminder} setNewReminder={setNewReminder}/>}
+      {tab==="itinerary"&&<ItineraryTab selections={selections} setSelections={setSelections} dayPins={dayPins} removePin={removePin} allItems={allItems} getDayDisplayItems={getDayDisplayItems} moveItem={moveItem} hideActivity={hideActivity} restoreActivity={restoreActivity} getHiddenItems={getHiddenItems} reminders={reminders} setReminders={setReminders} newReminder={newReminder} setNewReminder={setNewReminder} setPinTime={setPinTime}/>}
       {tab==="library"&&<LibraryTab library={library} setLibrary={setLibrary} pinToDay={pinToDay} dayPins={dayPins}/>}
       {tab==="food"&&<FoodTab food={food} setFood={setFood} pinToDay={pinToDay} dayPins={dayPins}/>}
       {tab==="conference"&&<ConferenceTab conference={conference} setConference={setConference} pinToDay={pinToDay} removePin={removePin} dayPins={dayPins}/>}
@@ -559,14 +568,19 @@ function App(){
 }
 
 // ─── Itinerary Tab ───
-function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity}){
+function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity,setPinTime}){
   const hours=[];for(let h=7;h<=23;h++)hours.push(h);
   const parseTime=(t)=>{if(!t)return null;const m=t.match(/^(\d{1,2}):(\d{2})/);if(!m)return null;return parseInt(m[1])+parseInt(m[2])/60};
   const parseEndTime=(t)=>{if(!t)return null;const m=t.match(/(\d{1,2}):(\d{2})$/);if(!m)return null;return parseInt(m[1])+parseInt(m[2])/60};
   const placed=[];const unplaced=[];
   displayItems.forEach((item,idx)=>{
     const start=parseTime(item.time);
-    if(start!==null){const end=parseEndTime(item.time)||start+0.5;placed.push({...item,idx,start,end:Math.max(end,start+0.5)})}
+    if(start!==null){
+      const rawEnd=parseEndTime(item.time);
+      const defaultDur=item.customTime?1.0:0.5;
+      const end=Math.max(rawEnd||0,start+defaultDur);
+      placed.push({...item,idx,start,end});
+    }
     else{unplaced.push({...item,idx})}
   });
 
@@ -609,6 +623,7 @@ function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity}
         {sorted.map(item=>{
           const isPinned=item.type==='pin';
           const isConfItem=isPinned&&item.themes?.includes("conference");
+          const canEditTime=isPinned&&!isConfItem&&item.customTime&&typeof setPinTime==='function';
           const top=(item.start-7)*SLOT_H;
           const height=Math.max((item.end-item.start)*SLOT_H,36);
           const numCols=evColCount.get(item.key)||1;
@@ -617,7 +632,7 @@ function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity}
           return <div key={item.key} className={`absolute rounded-lg px-2.5 py-1.5 border overflow-hidden group/cal ${isPinned?(isConfItem?"bg-red-500/10 border-red-500/30":"bg-orange-500/10 border-orange-500/30"):"bg-slate-700/60 border-slate-600/40"}`} style={{top,height,left:left+'%',width:`calc(${colW}% - ${GAP}px)`}}>
             <div className="flex items-start gap-1.5 h-full">
               <div className="flex-1 min-w-0 overflow-hidden">
-                <div className="flex items-center gap-1 flex-wrap"><span className="text-[10px] font-mono text-slate-500 flex-shrink-0">{item.time}</span><span className={`text-xs font-medium text-white ${height<50?"truncate":""}`}>{item.name}</span>{isPinned&&<span className="text-[9px] text-orange-400 font-medium px-1 rounded bg-orange-500/10 border border-orange-500/20 flex-shrink-0">PIN</span>}</div>
+                <div className="flex items-center gap-1 flex-wrap">{canEditTime?<input type="time" value={item.customTime} onChange={e=>setPinTime(dayIndex,item.key,e.target.value)} className="bg-slate-900 text-[10px] font-mono text-slate-400 border border-slate-700 rounded px-1 py-0 focus:border-orange-500 outline-none" title="Edit time (clear to unschedule)"/>:<span className="text-[10px] font-mono text-slate-500 flex-shrink-0">{item.time}</span>}<span className={`text-xs font-medium text-white ${height<50?"truncate":""}`}>{item.name}</span>{isPinned&&<span className="text-[9px] text-orange-400 font-medium px-1 rounded bg-orange-500/10 border border-orange-500/20 flex-shrink-0">PIN</span>}</div>
                 {height>=50&&<div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{item.desc}</div>}
                 {height>=72&&(item.themes||[]).length>0&&<div className="flex gap-1 mt-1 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}
               </div>
@@ -630,19 +645,21 @@ function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity}
     {unplaced.length>0&&<div className="mt-3 pt-3 border-t border-dashed border-slate-700/50"><div className="text-xs text-slate-500 mb-2">📌 Unscheduled items</div><div className="space-y-1.5">{unplaced.map(item=>{
       const isPinned=item.type==='pin';
       const isConfItem=isPinned&&item.themes?.includes("conference");
+      const canSetTime=isPinned&&!isConfItem&&typeof setPinTime==='function';
       return <div key={item.key} className={`flex items-center gap-2 rounded-lg px-3 py-2 border group/cal ${isPinned?(isConfItem?"bg-red-500/5 border-red-500/20":"bg-orange-500/5 border-orange-500/20"):"bg-slate-700/40 border-slate-600/30"}`}>
         {isPinned&&<div className="flex gap-0.5 flex-shrink-0">
           <button onClick={()=>moveItem(dayIndex,item.key,-1)} className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-slate-500 hover:text-white hover:bg-slate-700 transition-colors">▲</button>
           <button onClick={()=>moveItem(dayIndex,item.key,1)} className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-slate-500 hover:text-white hover:bg-slate-700 transition-colors">▼</button>
         </div>}
         <div className="flex-1 min-w-0"><span className="text-sm font-medium text-white">{item.name}</span>{(item.themes||[]).length>0&&<div className="flex gap-1 mt-1 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}</div>
+        {canSetTime&&<input type="time" value={item.customTime||""} onChange={e=>setPinTime(dayIndex,item.key,e.target.value)} title="Set a time to place this on the timeline" className="flex-shrink-0 bg-slate-900 text-slate-200 border border-slate-600 rounded px-1.5 py-0.5 text-xs font-mono focus:border-orange-500 outline-none"/>}
         <button onClick={()=>isPinned?removePin(dayIndex,item.key):hideActivity(dayIndex,item.key)} className="opacity-0 group-hover/cal:opacity-100 text-slate-500 hover:text-red-400 transition-all flex-shrink-0 text-sm">🗑</button>
       </div>
     })}</div></div>}
   </div>
 }
 
-function ItineraryTab({selections,setSelections,dayPins,removePin,allItems,getDayDisplayItems,moveItem,hideActivity,restoreActivity,getHiddenItems,reminders,setReminders,newReminder,setNewReminder}){
+function ItineraryTab({selections,setSelections,dayPins,removePin,allItems,getDayDisplayItems,moveItem,hideActivity,restoreActivity,getHiddenItems,reminders,setReminders,newReminder,setNewReminder,setPinTime}){
   const [expandedDay,setExpandedDay]=useState(null);
   const [calView,setCalView]=useState({});
 
@@ -715,7 +732,7 @@ function ItineraryTab({selections,setSelections,dayPins,removePin,allItems,getDa
           {exp&&<div className="px-5 pb-5 border-t border-slate-700/40">
             {day.options.length>1&&<div className="flex gap-2 mt-4 mb-4 flex-wrap">{day.options.map((o,oi)=><button key={o.id} onClick={()=>{const n=[...selections];n[i]=oi;setSelections(n)}} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${oi===selections[i]?"bg-orange-600 text-white shadow-lg shadow-orange-600/20":"bg-slate-700/60 text-slate-300 hover:bg-slate-600/60"}`}><div>{o.title}</div><div className={`text-xs mt-0.5 ${oi===selections[i]?"text-orange-200":"text-slate-500"}`}>{o.subtitle}</div></button>)}</div>}
             <div className="flex gap-4 mb-4 flex-wrap text-xs items-center"><span className="text-slate-500">Vibe: <span className="font-bold text-violet-400">{opt.vibeScore}/10</span></span><span className="text-slate-500">Budget: <span className="font-bold text-amber-400">${opt.budgetLow}–${opt.budgetHigh}</span></span><span className="flex-1"/><button onClick={()=>setCalView(p=>({...p,[i]:!p[i]}))} className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${calView[i]?"bg-sky-500/20 text-sky-400 border-sky-500/30":"bg-slate-700/60 text-slate-400 border-slate-600/30 hover:bg-slate-600/60"}`}>{calView[i]?"📋 List":"🗓 Calendar"}</button></div>
-            {calView[i]?<DayCalendarView displayItems={displayItems} dayIndex={i} moveItem={moveItem} removePin={removePin} hideActivity={hideActivity}/>:<div className="space-y-3">{displayItems.map((item,idx)=>{
+            {calView[i]?<DayCalendarView displayItems={displayItems} dayIndex={i} moveItem={moveItem} removePin={removePin} hideActivity={hideActivity} setPinTime={setPinTime}/>:<div className="space-y-3">{displayItems.map((item,idx)=>{
               const isPinned=item.type==='pin';
               const isConfItem=isPinned&&item.themes?.includes("conference");
               return <div key={item.key} className={`flex gap-3 group/item ${isPinned?`rounded-lg p-2 -mx-2 border ${isConfItem?"bg-red-500/5 border-red-500/20":"bg-orange-500/5 border-orange-500/20"}`:""}`}>
