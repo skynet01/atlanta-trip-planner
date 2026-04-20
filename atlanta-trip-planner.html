@@ -221,6 +221,39 @@ function TypeBadge({type}){const m={keynote:"bg-red-500/20 text-red-300 border-r
 
 function PriceTag({price}){const f=price.length,e=3-f;return <span className="font-mono text-sm"><span className="text-amber-400">{price}</span><span className="text-slate-700">{"$".repeat(Math.max(0,e))}</span></span>}
 
+// Build a Google Maps search link from an item name. No API required —
+// we just trust Google's search to resolve the name to a place in Atlanta.
+function mapLinkFor(item){
+  if(!item||!item.name)return null;
+  const region=item.region&&REGION_LABELS[item.region]?REGION_LABELS[item.region]:'';
+  const q=encodeURIComponent(`${item.name} ${region} Atlanta GA`.trim().replace(/\s+/g,' '));
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+
+function MapLink({item,small}){
+  const href=mapLinkFor(item);
+  if(!href)return null;
+  return <a href={href} target="_blank" rel="noopener noreferrer" title="Open in Google Maps" className={`inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-colors ${small?"px-1 py-0 text-[10px]":"px-1.5 py-0.5 text-xs"} font-medium`}>🗺 Map</a>
+}
+
+// Best-effort region guess from an item's name/description. Keyword-only —
+// no geocoding. Returns null when nothing matches so the default dropdown stays.
+const REGION_KEYWORDS={
+  midtown:[/\bmidtown\b/,/\bcanopy by hilton\b/,/\bscadshow\b/,/\bpiedmont park\b/,/\bcolony square\b/],
+  downtown:[/\bdowntown\b/,/\bcentennial\b/,/\bmercedes[- ]benz\b/,/\bphilips arena\b/,/\bstate farm arena\b/,/\bworld of coca[- ]cola\b/,/\bgeorgia aquarium\b/,/\bcnn\b/,/\bwoodruff park\b/],
+  eastside:[/\beast(side| atlanta)\b/,/\bbeltline\b/,/\bold fourth ward\b/,/\bo4w\b/,/\bponce city\b/,/\binman park\b/,/\bkrog\b/,/\blittle five\b/,/\bvirginia[- ]highland\b/,/\bponcey/,/\bedgewood\b/,/\bcabbagetown\b/,/\bireynoldstown\b/,/\breynoldstown\b/,/\bticonderoga\b/,/\bfox bros\b/,/\b9 mile station\b/],
+  westside:[/\bwestside\b/,/\bwest.?midtown\b/,/\bgoat farm\b/,/\bupper westside\b/,/\bking plow\b/,/\bbellwood\b/],
+  decatur:[/\bdecatur\b/,/\bcommunity q\b/,/\bstone mountain\b/],
+  buckhead:[/\bbuckhead\b/,/\blenox\b/,/\bphipps\b/],
+};
+function guessRegion(text){
+  const t=(text||'').toLowerCase();
+  for(const [region,patterns] of Object.entries(REGION_KEYWORDS)){
+    if(patterns.some(re=>re.test(t)))return region;
+  }
+  return null;
+}
+
 function DayPicker({onSelect,label}){
   const [open,setOpen]=useState(false);
   return <div className="relative"><button onClick={()=>setOpen(!open)} className="px-3 py-1.5 rounded-lg bg-orange-600/20 text-orange-300 text-xs font-medium hover:bg-orange-600/30 transition-colors border border-orange-500/30">{label||"+ Pin to Day"}</button>
@@ -651,7 +684,7 @@ function DayCalendarView({displayItems,dayIndex,moveItem,removePin,hideActivity,
           <button onClick={()=>moveItem(dayIndex,item.key,-1)} className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-slate-500 hover:text-white hover:bg-slate-700 transition-colors">▲</button>
           <button onClick={()=>moveItem(dayIndex,item.key,1)} className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-slate-500 hover:text-white hover:bg-slate-700 transition-colors">▼</button>
         </div>}
-        <div className="flex-1 min-w-0"><span className="text-sm font-medium text-white">{item.name}</span>{(item.themes||[]).length>0&&<div className="flex gap-1 mt-1 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}</div>
+        <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium text-white">{item.name}</span>{isPinned&&!isConfItem&&<MapLink item={item} small/>}</div>{(item.themes||[]).length>0&&<div className="flex gap-1 mt-1 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}</div>
         {canSetTime&&<input type="time" value={item.customTime||""} onChange={e=>setPinTime(dayIndex,item.key,e.target.value)} title="Set a time to place this on the timeline" className="flex-shrink-0 bg-slate-900 text-slate-200 border border-slate-600 rounded px-1.5 py-0.5 text-xs font-mono focus:border-orange-500 outline-none"/>}
         <button onClick={()=>isPinned?removePin(dayIndex,item.key):hideActivity(dayIndex,item.key)} className="opacity-0 group-hover/cal:opacity-100 text-slate-500 hover:text-red-400 transition-all flex-shrink-0 text-sm">🗑</button>
       </div>
@@ -743,7 +776,7 @@ function ItineraryTab({selections,setSelections,dayPins,removePin,allItems,getDa
                 <div className="flex-shrink-0 w-14 text-right"><span className="text-xs font-mono text-slate-500">{item.time||"📌"}</span></div>
                 <div className="flex-shrink-0 w-px bg-slate-700 relative"><div className={`absolute top-1 -left-1 w-2.5 h-2.5 rounded-full border-2 border-slate-800 transition-colors ${isPinned?(isConfItem?"bg-red-500":"bg-orange-500"):"bg-slate-600 group-hover/item:bg-orange-500"}`}/></div>
                 <div className="flex-1 pb-1">
-                  <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium text-white">{item.name}</span>{isPinned&&<span className="text-[10px] text-orange-400 font-medium px-1.5 py-0.5 rounded bg-orange-500/10 border border-orange-500/20">PINNED</span>}{item.interestScore&&<InterestBadge value={item.interestScore}/>}{item.proximity!=null&&<ProximityBadge value={item.proximity}/>}{item.price&&<PriceTag price={item.price}/>}</div>
+                  <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium text-white">{item.name}</span>{isPinned&&<span className="text-[10px] text-orange-400 font-medium px-1.5 py-0.5 rounded bg-orange-500/10 border border-orange-500/20">PINNED</span>}{item.interestScore&&<InterestBadge value={item.interestScore}/>}{item.proximity!=null&&<ProximityBadge value={item.proximity}/>}{item.price&&<PriceTag price={item.price}/>}{isPinned&&!isConfItem&&<MapLink item={item}/>}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{item.desc}</div>
                   {(item.themes||[]).length>0&&<div className="flex gap-1 mt-1.5 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>}
                 </div>
@@ -778,20 +811,23 @@ function LibraryTab({library,setLibrary,pinToDay,dayPins}){
   const [ft,setFt]=useState(null);
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",desc:"",region:"midtown",themes:[],adventureScore:5,budgetEst:"$$",proximity:100});
+  const [regionTouched,setRegionTouched]=useState(false);
   const pinnedIds=useMemo(()=>{const s=new Set();Object.values(dayPins).forEach(a=>a.forEach(id=>s.add(id)));return s},[dayPins]);
   const filtered=ft?library.filter(x=>x.themes.includes(ft)):library;
   const removeItem=id=>setLibrary(p=>p.filter(x=>x.id!==id));
-  const addItem=()=>{if(!form.name.trim())return;setLibrary(p=>[...p,{...form,id:"a-"+Date.now(),themes:form.themes.length?form.themes:["chill"]}]);setForm({name:"",desc:"",region:"midtown",themes:[],adventureScore:5,budgetEst:"$$",proximity:100});setShowForm(false)};
+  const addItem=()=>{if(!form.name.trim())return;setLibrary(p=>[...p,{...form,id:"a-"+Date.now(),themes:form.themes.length?form.themes:["chill"]}]);setForm({name:"",desc:"",region:"midtown",themes:[],adventureScore:5,budgetEst:"$$",proximity:100});setRegionTouched(false);setShowForm(false)};
   const toggleTheme=t=>setForm(p=>({...p,themes:p.themes.includes(t)?p.themes.filter(x=>x!==t):[...p.themes,t]}));
+  const updateNameOrDesc=(field,value)=>setForm(p=>{const next={...p,[field]:value};if(!regionTouched){const guess=guessRegion(next.name+' '+next.desc);if(guess)next.region=guess;}return next});
+  const guessedRegion=!regionTouched?guessRegion(form.name+' '+form.desc):null;
 
   return <>
     <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-white">🥾 Activity Library</h2><button onClick={()=>setShowForm(!showForm)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500 transition-colors">{showForm?"Cancel":"+ New Activity"}</button></div>
     <p className="text-sm text-slate-400 mb-4">Browse activities and pin them to specific days. Proximity shows distance from Midtown (hotel).</p>
     {showForm&&<div className="bg-slate-800/80 rounded-xl border border-emerald-500/30 p-4 mb-4 space-y-3">
-      <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="Activity name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-emerald-500 outline-none"/>
-      <textarea value={form.desc} onChange={e=>setForm(p=>({...p,desc:e.target.value}))} placeholder="Description" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-emerald-500 outline-none resize-none"/>
+      <input value={form.name} onChange={e=>updateNameOrDesc('name',e.target.value)} placeholder="Activity name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-emerald-500 outline-none"/>
+      <textarea value={form.desc} onChange={e=>updateNameOrDesc('desc',e.target.value)} placeholder="Description" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-emerald-500 outline-none resize-none"/>
       <div className="flex gap-4 flex-wrap">
-        <div><label className="text-xs text-slate-500 block mb-1">Region</label><select value={form.region} onChange={e=>setForm(p=>({...p,region:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600">{REGIONS.map(r=><option key={r} value={r}>{REGION_LABELS[r]}</option>)}</select></div>
+        <div><label className="text-xs text-slate-500 block mb-1">Region{guessedRegion&&guessedRegion!==form.region&&<span className="ml-2 text-[10px] text-emerald-400">auto-detected: {REGION_LABELS[guessedRegion]}</span>}</label><select value={form.region} onChange={e=>{setRegionTouched(true);setForm(p=>({...p,region:e.target.value}))}} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600">{REGIONS.map(r=><option key={r} value={r}>{REGION_LABELS[r]}</option>)}</select></div>
         <div><label className="text-xs text-slate-500 block mb-1">Proximity %</label><input type="number" min={0} max={100} value={form.proximity} onChange={e=>setForm(p=>({...p,proximity:+e.target.value}))} className="w-20 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"/></div>
       </div>
       <div><label className="text-xs text-slate-500 block mb-1">Tags</label><div className="flex gap-1.5 flex-wrap">{Object.entries(THEMES).filter(([k])=>k!=="conference").map(([k,t])=><button key={k} onClick={()=>toggleTheme(k)} className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${form.themes.includes(k)?`${t.bg} ${t.text} border ${t.border}`:"bg-slate-700/60 text-slate-500 hover:bg-slate-600/60"}`}>{t.icon} {t.label}</button>)}</div></div>
@@ -802,7 +838,7 @@ function LibraryTab({library,setLibrary,pinToDay,dayPins}){
       {Object.entries(THEMES).filter(([k])=>k!=="conference").map(([k,t])=><button key={k} onClick={()=>setFt(ft===k?null:k)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${ft===k?`${t.bg} ${t.text} border ${t.border}`:"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>{t.icon} {t.label}</button>)}
     </div>
     <div className="space-y-2">{filtered.map(item=>{const pinned=pinnedIds.has(item.id);return <div key={item.id} className={`rounded-xl border p-4 ${pinned?"bg-emerald-500/10 border-emerald-500/30":"bg-slate-800/80 border-slate-700/40"}`}><div className="flex items-start gap-3"><div className="flex-1 min-w-0">
-      <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{item.name}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}{item.budgetEst&&<PriceTag price={item.budgetEst}/>}<span className="text-xs text-slate-500">{REGION_LABELS[item.region]}</span><ProximityBadge value={item.proximity}/></div>
+      <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{item.name}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}{item.budgetEst&&<PriceTag price={item.budgetEst}/>}<span className="text-xs text-slate-500">{REGION_LABELS[item.region]}</span><ProximityBadge value={item.proximity}/><MapLink item={item}/></div>
       <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
       <div className="flex gap-1 mt-2 flex-wrap">{(item.themes||[]).map(t=><ThemeTag key={t} theme={t}/>)}</div>
     </div><div className="flex items-center gap-2 flex-shrink-0"><DayPicker onSelect={di=>pinToDay(di,item.id)}/>{item.id.startsWith("a-")&&<button onClick={()=>removeItem(item.id)} className="text-slate-600 hover:text-red-400 transition-colors text-sm">✕</button>}</div></div></div>})}</div>
@@ -815,20 +851,23 @@ function FoodTab({food,setFood,pinToDay,dayPins}){
   const [fr,setFr]=useState(null);
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",desc:"",region:"midtown",price:"$$",proximity:100,themes:["food"]});
+  const [regionTouched,setRegionTouched]=useState(false);
   const pinnedIds=useMemo(()=>{const s=new Set();Object.values(dayPins).forEach(a=>a.forEach(id=>s.add(id)));return s},[dayPins]);
   const regions=[...new Set(food.map(f=>f.region))];
   const filtered=fr?food.filter(f=>f.region===fr):food;
   const grouped={};filtered.forEach(f=>{if(!grouped[f.region])grouped[f.region]=[];grouped[f.region].push(f)});
   const removeItem=id=>setFood(p=>p.filter(x=>x.id!==id));
-  const addItem=()=>{if(!form.name.trim())return;setFood(p=>[...p,{...form,id:"f-"+Date.now(),themes:["food"]}]);setForm({name:"",desc:"",region:"midtown",price:"$$",proximity:100,themes:["food"]});setShowForm(false)};
+  const addItem=()=>{if(!form.name.trim())return;setFood(p=>[...p,{...form,id:"f-"+Date.now(),themes:["food"]}]);setForm({name:"",desc:"",region:"midtown",price:"$$",proximity:100,themes:["food"]});setRegionTouched(false);setShowForm(false)};
+  const updateNameOrDesc=(field,value)=>setForm(p=>{const next={...p,[field]:value};if(!regionTouched){const guess=guessRegion(next.name+' '+next.desc);if(guess)next.region=guess;}return next});
+  const guessedRegion=!regionTouched?guessRegion(form.name+' '+form.desc):null;
 
   return <>
     <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-white">🍗 Food Guide</h2><button onClick={()=>setShowForm(!showForm)} className="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-medium hover:bg-orange-500 transition-colors">{showForm?"Cancel":"+ Add Food"}</button></div>
     <p className="text-sm text-slate-400 mb-4">Food wishlist by neighborhood. Proximity shows distance from Midtown.</p>
     {showForm&&<div className="bg-slate-800/80 rounded-xl border border-orange-500/30 p-4 mb-4 space-y-3">
-      <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="Food / Restaurant name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
-      <textarea value={form.desc} onChange={e=>setForm(p=>({...p,desc:e.target.value}))} placeholder="Notes" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none resize-none"/>
-      <div className="flex gap-4 flex-wrap"><div><label className="text-xs text-slate-500 block mb-1">Region</label><select value={form.region} onChange={e=>setForm(p=>({...p,region:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600">{REGIONS.map(r=><option key={r} value={r}>{REGION_LABELS[r]}</option>)}</select></div><div><label className="text-xs text-slate-500 block mb-1">Price</label><select value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"><option value="$">$ Budget</option><option value="$$">$$ Mid</option><option value="$$$">$$$ Splurge</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Proximity %</label><input type="number" min={0} max={100} value={form.proximity} onChange={e=>setForm(p=>({...p,proximity:+e.target.value}))} className="w-20 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"/></div></div>
+      <input value={form.name} onChange={e=>updateNameOrDesc('name',e.target.value)} placeholder="Food / Restaurant name" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none"/>
+      <textarea value={form.desc} onChange={e=>updateNameOrDesc('desc',e.target.value)} placeholder="Notes" rows={2} className="w-full bg-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 border border-slate-600 focus:border-orange-500 outline-none resize-none"/>
+      <div className="flex gap-4 flex-wrap"><div><label className="text-xs text-slate-500 block mb-1">Region{guessedRegion&&guessedRegion!==form.region&&<span className="ml-2 text-[10px] text-emerald-400">auto-detected: {REGION_LABELS[guessedRegion]}</span>}</label><select value={form.region} onChange={e=>{setRegionTouched(true);setForm(p=>({...p,region:e.target.value}))}} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600">{REGIONS.map(r=><option key={r} value={r}>{REGION_LABELS[r]}</option>)}</select></div><div><label className="text-xs text-slate-500 block mb-1">Price</label><select value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))} className="bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"><option value="$">$ Budget</option><option value="$$">$$ Mid</option><option value="$$$">$$$ Splurge</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Proximity %</label><input type="number" min={0} max={100} value={form.proximity} onChange={e=>setForm(p=>({...p,proximity:+e.target.value}))} className="w-20 bg-slate-700 rounded-lg px-3 py-1.5 text-sm text-white border border-slate-600"/></div></div>
       <button onClick={addItem} className="px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-medium hover:bg-orange-500 transition-colors">Add to Guide</button>
     </div>}
     <div className="flex gap-1.5 mb-5 flex-wrap">
@@ -836,7 +875,7 @@ function FoodTab({food,setFood,pinToDay,dayPins}){
       {regions.map(r=><button key={r} onClick={()=>setFr(fr===r?null:r)} className={`px-2.5 py-1 rounded-full text-xs font-medium ${fr===r?"bg-orange-500/20 text-orange-400 border border-orange-500/30":"bg-slate-700/60 text-slate-400 hover:bg-slate-600/60"}`}>{REGION_LABELS[r]||r}</button>)}
     </div>
     {Object.entries(grouped).map(([region,items])=><div key={region} className="mb-6"><h3 className="text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2"><span className="text-orange-400">🍗</span> {REGION_LABELS[region]||region} <span className="text-xs text-slate-600">({items.length})</span></h3><div className="space-y-2">{items.map(item=>{const pinned=pinnedIds.has(item.id);return <div key={item.id} className={`rounded-xl border p-4 ${pinned?"bg-emerald-500/10 border-emerald-500/30":"bg-slate-800/80 border-slate-700/40"}`}><div className="flex items-start gap-3"><div className="flex-1 min-w-0">
-      <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{item.name}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}<PriceTag price={item.price}/><ProximityBadge value={item.proximity}/></div>
+      <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-semibold text-white">{item.name}</span>{pinned&&<span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">PINNED</span>}<PriceTag price={item.price}/><ProximityBadge value={item.proximity}/><MapLink item={item}/></div>
       <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
       {item.themes&&<div className="flex gap-1 mt-2 flex-wrap">{item.themes.map(t=><ThemeTag key={t} theme={t}/>)}</div>}
     </div><div className="flex items-center gap-2 flex-shrink-0"><DayPicker onSelect={di=>pinToDay(di,item.id)} label="📌 Pin"/>{item.id.startsWith("f-")&&<button onClick={()=>removeItem(item.id)} className="text-slate-600 hover:text-red-400 transition-colors text-sm">✕</button>}</div></div></div>})}</div></div>)}
